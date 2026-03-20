@@ -1,0 +1,66 @@
+{
+  "realm": "ecommerce-realm",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "nextjs-app",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "my-super-secret-key",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost/*"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Quản trị viên" },
+      { "name": "seller", "description": "Người bán hàng" },
+      { "name": "buyer", "description": "Người mua hàng" }
+    ]
+  },
+  "users": [
+    {
+      "username": "buyer1",
+      "email": "buyer1@test.com",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "123456",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["buyer"]
+    },
+    {
+      "username": "seller1",
+      "email": "seller1@test.com",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "123456",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["seller"]
+    },
+    {
+      "username": "admin1",
+      "email": "admin1@test.com",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ]
+}
