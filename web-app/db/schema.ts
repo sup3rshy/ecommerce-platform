@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
@@ -15,3 +15,27 @@ export const products = pgTable("products", {
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const orders = pgTable("orders", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  productId: integer("product_id").references(() => products.id),
+  status: text("status").default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const cartItems = pgTable(
+  "cart_items",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull().default(1),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    userProductUnique: uniqueIndex("cart_user_product_unique").on(table.userId, table.productId),
+  })
+);

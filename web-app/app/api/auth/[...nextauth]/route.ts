@@ -7,6 +7,7 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.KEYCLOAK_CLIENT_ID!,
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
       issuer: process.env.KEYCLOAK_ISSUER,
+      authorization: { params: { prompt: "login" } },
       profile(profile) {
         return {
           id: profile.sub,
@@ -37,8 +38,30 @@ export const authOptions: NextAuthOptions = {
       session.idToken = token.idToken;
       return session;
     },
-    async redirect({ url, baseUrl }) {
+    async redirect({ baseUrl }) {
       return baseUrl;
+    },
+  },
+  events: {
+    async signOut({ token }) {
+      if (token.idToken && process.env.KEYCLOAK_ISSUER) {
+        try {
+          const keycloakUrl = new URL(
+            `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/logout`
+          );
+          keycloakUrl.searchParams.set("id_token_hint", token.idToken as string);
+          
+          // Gọi Keycloak logout endpoint để invalidate session
+          await fetch(keycloakUrl.toString(), {
+            method: "GET",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          }).catch(() => {
+            // Ignore errors from Keycloak logout
+          });
+        } catch (error) {
+          console.error("Error logging out from Keycloak:", error);
+        }
+      }
     },
   },
 };

@@ -3,21 +3,36 @@
 import { signOut } from "next-auth/react";
 import { useState } from "react";
 
-export default function LogoutButton({ logoutUrl }: { logoutUrl?: string }) {
+type LogoutButtonProps = {
+  idToken?: string;
+};
+
+export default function LogoutButton({ idToken }: LogoutButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogout = async () => {
     try {
       setIsLoading(true);
-      console.log("Logout button clicked, logoutUrl:", logoutUrl);
-      
-      if (logoutUrl) {
-        console.log("Logging out with Keycloak redirect");
+
+      // Fully terminate SSO session at Keycloak and then return to homepage.
+      if (idToken && process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER) {
+        const keycloakLogoutUrl = new URL(
+          `${process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER}/protocol/openid-connect/logout`
+        );
+        keycloakLogoutUrl.searchParams.set("id_token_hint", idToken);
+        keycloakLogoutUrl.searchParams.set("client_id", "nextjs-app");
+        keycloakLogoutUrl.searchParams.set(
+          "post_logout_redirect_uri",
+          `${window.location.origin}/`
+        );
+
+        // Clear NextAuth cookie first.
         await signOut({ redirect: false });
-        console.log("About to redirect to:", logoutUrl);
-        window.location.href = logoutUrl;
+
+        // Then go to Keycloak logout endpoint.
+        window.location.href = keycloakLogoutUrl.toString();
       } else {
-        console.log("No logoutUrl provided, using fallback");
+        // Fallback if token is missing.
         await signOut({ redirect: true, callbackUrl: "/" });
       }
     } catch (error) {
