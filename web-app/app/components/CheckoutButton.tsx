@@ -42,10 +42,10 @@ export default function CheckoutButton({ product }: { product: CheckoutProduct }
   };
 
   return (
-    <button 
+    <button
       onClick={handleMockPayment}
       disabled={loading}
-      className="bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-1 rounded text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      className="cursor-pointer rounded-lg bg-blue-600 px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
     >
       {loading ? "Đang xử lý thanh toán..." : "Mua ngay"}
     </button>

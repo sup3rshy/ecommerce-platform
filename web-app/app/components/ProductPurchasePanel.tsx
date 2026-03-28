@@ -14,13 +14,13 @@ export default function ProductPurchasePanel({ productId }: ProductPurchasePanel
   const increase = () => setQuantity((prev) => prev + 1);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-sm font-semibold text-slate-800">Chọn số lượng</p>
+    <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 shadow-sm">
+      <p className="text-sm font-semibold text-slate-900">Chọn số lượng</p>
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={decrease}
-          className="h-9 w-9 rounded-lg border border-slate-300 text-lg font-semibold text-slate-700 hover:bg-slate-100"
+          className="h-9 w-9 rounded-lg border border-blue-200 text-lg font-semibold text-blue-700 hover:bg-blue-100"
         >
           -
         </button>
@@ -32,12 +32,12 @@ export default function ProductPurchasePanel({ productId }: ProductPurchasePanel
             const next = Number(event.target.value);
             setQuantity(Number.isFinite(next) && next > 0 ? next : 1);
           }}
-          className="h-9 w-20 rounded-lg border border-slate-300 px-2 text-center text-sm"
+          className="h-9 w-20 rounded-lg border border-blue-200 px-2 text-center text-sm focus:border-blue-500 focus:outline-none"
         />
         <button
           type="button"
           onClick={increase}
-          className="h-9 w-9 rounded-lg border border-slate-300 text-lg font-semibold text-slate-700 hover:bg-slate-100"
+          className="h-9 w-9 rounded-lg border border-blue-200 text-lg font-semibold text-blue-700 hover:bg-blue-100"
         >
           +
         </button>

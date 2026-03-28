@@ -13,7 +13,19 @@ export const products = pgTable("products", {
   name: text("name").notNull(),
   price: integer("price").notNull(),
   description: text("description"),
+  imageUrl: text("image_url"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const sellerUpgradeRequests = pgTable("seller_upgrade_requests", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  storeName: text("store_name").notNull(),
+  status: text("status").notNull().default("pending"),
+  reviewedBy: text("reviewed_by"),
+  adminNote: text("admin_note"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  reviewedAt: timestamp("reviewed_at"),
 });
 
 export const orders = pgTable("orders", {

@@ -8,9 +8,20 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "my-super-secret-key",
       "redirectUris": [
-        "http://localhost:3000/*",
-        "http://localhost/*"
+        "http://localhost:8000",
+        "http://localhost:8000/",
+        "http://localhost:8000/api/auth/callback/keycloak",
+        "http://localhost:3000",
+        "http://localhost:3000/",
+        "http://localhost:3000/api/auth/callback/keycloak"
       ],
+      "webOrigins": [
+        "http://localhost:8000",
+        "http://localhost:3000"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:3000##http://localhost:3000/##http://localhost:8000##http://localhost:8000/"
+      },
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true
     }

@@ -10,6 +10,22 @@ type KeycloakRoleRepresentation = {
   name: string;
 };
 
+type KeycloakUserRepresentation = {
+  id: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+};
+
+export type KeycloakUserWithRoles = {
+  id: string;
+  username: string | null;
+  fullName: string | null;
+  email: string | null;
+  roles: string[];
+};
+
 function getKeycloakAdminConfig(): KeycloakAdminConfig {
   const issuer = process.env.KEYCLOAK_ISSUER;
   const adminClientId =
@@ -69,6 +85,52 @@ async function getAdminAccessToken(config: KeycloakAdminConfig): Promise<string>
   }
 
   return payload.access_token;
+}
+
+async function getRealmUsers(
+  config: KeycloakAdminConfig,
+  accessToken: string,
+  max: number
+): Promise<KeycloakUserRepresentation[]> {
+  const usersEndpoint = `${config.serverUrl}/admin/realms/${config.realm}/users?max=${max}`;
+  const response = await fetch(usersEndpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as KeycloakUserRepresentation[] | null;
+
+  if (!response.ok || !Array.isArray(payload)) {
+    throw new Error("Cannot load users from Keycloak admin API.");
+  }
+
+  return payload;
+}
+
+async function getUserRealmRoles(
+  config: KeycloakAdminConfig,
+  accessToken: string,
+  userId: string
+): Promise<string[]> {
+  const roleEndpoint = `${config.serverUrl}/admin/realms/${config.realm}/users/${encodeURIComponent(userId)}/role-mappings/realm`;
+  const response = await fetch(roleEndpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as KeycloakRoleRepresentation[] | null;
+
+  if (!response.ok || !Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload.map((role) => role.name).filter(Boolean);
 }
 
 async function getRealmRoleByName(
@@ -139,4 +201,29 @@ export async function getKeycloakUserCount(): Promise<number | null> {
   } catch {
     return null;
   }
+}
+
+export async function getKeycloakUsersWithRoles(limit = 100): Promise<KeycloakUserWithRoles[]> {
+  const config = getKeycloakAdminConfig();
+  const accessToken = await getAdminAccessToken(config);
+  const users = await getRealmUsers(config, accessToken, limit);
+
+  const usersWithRoles = await Promise.all(
+    users.map(async (user) => {
+      const roles = await getUserRealmRoles(config, accessToken, user.id);
+      const firstName = user.firstName?.trim() ?? "";
+      const lastName = user.lastName?.trim() ?? "";
+      const fullName = `${firstName} ${lastName}`.trim();
+
+      return {
+        id: user.id,
+        username: user.username ?? null,
+        fullName: fullName || null,
+        email: user.email ?? null,
+        roles,
+      };
+    })
+  );
+
+  return usersWithRoles;
 }

@@ -57,14 +57,14 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <header className="rounded-2xl border border-blue-100 bg-blue-50/60 p-6 shadow-sm">
         <h1 className="text-2xl font-bold text-slate-900">Tổng quan hệ thống</h1>
         <p className="mt-2 text-slate-600">Theo dõi sức khỏe vận hành toàn sàn theo thời gian thực.</p>
       </header>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((item) => (
-          <article key={item.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <article key={item.label} className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
             <p className="text-sm text-slate-500">{item.label}</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{item.value}</p>
             <p className="mt-1 text-xs text-slate-500">{item.description}</p>
@@ -72,8 +72,8 @@ export default async function AdminOverviewPage() {
         ))}
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
+      <section className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
+        <div className="border-b border-blue-100 px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">Đơn hàng mới nhất</h2>
         </div>
 
@@ -81,8 +81,8 @@ export default async function AdminOverviewPage() {
           <p className="px-5 py-6 text-sm text-slate-500">Chưa có đơn hàng phát sinh trong hệ thống.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
+            <table className="min-w-full divide-y divide-blue-100 text-sm">
+              <thead className="bg-blue-50 text-left text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Mã đơn</th>
                   <th className="px-4 py-3 font-medium">Người mua</th>
@@ -93,7 +93,7 @@ export default async function AdminOverviewPage() {
                   <th className="px-4 py-3 font-medium">Thời gian</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+              <tbody className="divide-y divide-blue-50 bg-white text-slate-700">
                 {recentOrders.map((order) => (
                   <tr key={order.id}>
                     <td className="whitespace-nowrap px-4 py-3 font-semibold">#{order.id}</td>

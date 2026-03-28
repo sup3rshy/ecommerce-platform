@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-img-element */
+
 import { and, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
@@ -32,6 +34,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
       name: products.name,
       description: products.description,
       price: products.price,
+      imageUrl: products.imageUrl,
       storeName: stores.name,
       storeId: stores.id,
     })
@@ -46,18 +49,20 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="mx-auto w-full max-w-5xl px-1 py-2 sm:px-2">
       <div className="mb-4">
         <Link href="/" className="text-sm font-medium text-sky-700 hover:text-sky-800">
           ← Quay lại trang chủ
         </Link>
       </div>
 
-      <section className="grid grid-cols-1 gap-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:grid-cols-[1.2fr_1fr]">
+      <section className="grid grid-cols-1 gap-6 rounded-3xl border border-blue-100 bg-white p-6 shadow-sm lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <div className="mb-4 flex h-64 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-100 to-cyan-50 text-sky-900">
-            Hình ảnh sản phẩm
-          </div>
+          <img
+            src={product.imageUrl || "/default-product.svg"}
+            alt={product.name}
+            className="mb-4 h-64 w-full rounded-2xl border border-blue-100 bg-blue-50 object-cover"
+          />
           <h1 className="text-3xl font-bold text-slate-900">{product.name}</h1>
           <p className="mt-2 text-sm text-slate-500">
             Gian hàng: <span className="font-semibold text-slate-700">{product.storeName ?? "Chưa có gian hàng"}</span>
@@ -69,7 +74,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
           {session && canBuy ? (
             <ProductPurchasePanel productId={product.id} />
           ) : session ? (
-            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
               Tài khoản hiện tại không có vai trò buyer nên chưa thể thêm sản phẩm vào giỏ.
             </div>
           ) : (
@@ -78,7 +83,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
             </div>
           )}
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
             <p className="text-sm font-semibold text-slate-800">Thông số kỹ thuật</p>
             <ul className="mt-2 space-y-1 text-sm text-slate-600">
               <li>Mã sản phẩm: #{product.id}</li>
@@ -90,12 +95,12 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
       </section>
 
       <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-900">Mô tả chi tiết</h2>
           <p className="mt-3 text-slate-700">{product.description ?? "Sản phẩm hiện chưa có mô tả chi tiết."}</p>
         </article>
 
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-900">Đánh giá</h2>
           <p className="mt-3 text-slate-700">Chức năng đánh giá đang được cập nhật. Nội dung đánh giá sẽ hiển thị tại đây.</p>
         </article>

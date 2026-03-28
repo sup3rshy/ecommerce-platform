@@ -46,7 +46,7 @@ export default function AddToCartButton({ productId, quantity = 1 }: AddToCartBu
     <button
       onClick={handleAddToCart}
       disabled={loading}
-      className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
+      className="rounded-lg bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 transition-colors hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {loading ? "Đang thêm..." : added ? "Đã thêm" : "Thêm vào giỏ"}
     </button>

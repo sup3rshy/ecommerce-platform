@@ -1,6 +1,5 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { FormEvent, useState } from "react";
 
 type SellerRegistrationFormProps = {
@@ -37,10 +36,7 @@ export default function SellerRegistrationForm({ initialStoreName = "" }: Seller
 
       alert(payload?.message ?? "Đăng ký thành công. Hệ thống sẽ đăng xuất để bạn đăng nhập lại.");
 
-      if (payload?.requiresReLogin) {
-        await signOut({ redirect: false });
-        window.location.href = "/api/auth/signin/keycloak?callbackUrl=/seller";
-      }
+      setStoreName("");
     } catch {
       setError("Đã có lỗi xảy ra khi gửi đăng ký.");
     } finally {

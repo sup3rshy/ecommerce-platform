@@ -7,6 +7,10 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.KEYCLOAK_CLIENT_ID!,
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
       issuer: process.env.KEYCLOAK_ISSUER,
+      client: {
+        id_token_signed_response_alg: "ES256",
+        userinfo_signed_response_alg: "ES256",
+      },
       authorization: { params: { prompt: "login" } },
       profile(profile) {
         return {

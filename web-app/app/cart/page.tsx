@@ -17,7 +17,7 @@ export default async function CartPage() {
   }
 
   return (
-    <main className="p-8 max-w-4xl mx-auto w-full">
+    <main className="mx-auto w-full max-w-5xl px-1 py-2 sm:px-2">
       <CartClient />
     </main>
   );

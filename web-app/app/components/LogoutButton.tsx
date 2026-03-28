@@ -45,7 +45,7 @@ export default function LogoutButton({ idToken }: LogoutButtonProps) {
     <button
       onClick={handleLogout}
       disabled={isLoading}
-      className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:bg-gray-500 transition"
+      className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
     >
       {isLoading ? "Đang đăng xuất..." : "Đăng xuất"}
     </button>

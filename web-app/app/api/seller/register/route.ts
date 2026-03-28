@@ -1,11 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 import { authOptions } from "../../auth/[...nextauth]/route";
 import { db } from "../../../../db";
-import { stores } from "../../../../db/schema";
-import { assignRealmRoleToUser } from "../../../../lib/keycloak-admin";
+import { sellerUpgradeRequests, stores } from "../../../../db/schema";
 
 type SellerRegistrationBody = {
   storeName?: string;
@@ -48,29 +47,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bạn đã có gian hàng trước đó." }, { status: 409 });
   }
 
-  const inserted = await db
-    .insert(stores)
-    .values({
-      ownerId: session.user.id,
-      name: storeName,
+  const latestRequest = await db
+    .select({
+      id: sellerUpgradeRequests.id,
+      status: sellerUpgradeRequests.status,
     })
-    .returning({ id: stores.id });
+    .from(sellerUpgradeRequests)
+    .where(eq(sellerUpgradeRequests.userId, session.user.id))
+    .orderBy(desc(sellerUpgradeRequests.requestedAt))
+    .limit(1);
 
-  try {
-    await assignRealmRoleToUser(session.user.id, "seller");
-  } catch (error) {
-    await db.delete(stores).where(and(eq(stores.ownerId, session.user.id), eq(stores.id, inserted[0].id)));
+  if (latestRequest[0]?.status === "pending") {
+    return NextResponse.json({ error: "Bạn đang có yêu cầu chờ quản trị viên phê duyệt." }, { status: 409 });
+  }
 
-    console.error("Seller role assignment failed:", error);
+  if (latestRequest[0]?.status === "approved") {
     return NextResponse.json(
-      { error: "Không thể cấp quyền seller lúc này. Vui lòng thử lại sau." },
-      { status: 500 }
+      { error: "Yêu cầu của bạn đã được phê duyệt. Vui lòng đăng nhập lại để nhận quyền seller." },
+      { status: 409 }
     );
   }
 
+  await db.insert(sellerUpgradeRequests).values({
+    userId: session.user.id,
+    storeName,
+    status: "pending",
+  });
+
   return NextResponse.json({
     success: true,
-    requiresReLogin: true,
-    message: "Đăng ký gian hàng thành công. Vui lòng đăng nhập lại để kích hoạt quyền seller.",
+    requiresReLogin: false,
+    message: "Yêu cầu đã được ghi nhận và đang chờ quản trị viên phê duyệt.",
   });
 }

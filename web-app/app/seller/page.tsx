@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-img-element */
+
 import { getServerSession } from "next-auth";
 import { authOptions } from "../api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
@@ -12,6 +14,17 @@ type StoreProduct = {
   name: string;
   description: string | null;
   price: number;
+  imageUrl: string | null;
+};
+
+type OrderStatus = "pending" | "shipping" | "completed" | "paid";
+
+const toOrderStatus = (status: string | null): OrderStatus => {
+  if (status === "shipping" || status === "completed" || status === "paid") {
+    return status;
+  }
+
+  return "pending";
 };
 
 export default async function SellerDashboard() {
@@ -29,18 +42,19 @@ export default async function SellerDashboard() {
   // Truy vấn cơ sở dữ liệu xem người dùng này đã tạo gian hàng chưa
   const userStores = await db.select().from(stores).where(eq(stores.ownerId, session.user.id));
   const hasStore = userStores.length > 0;
+  const userStore = userStores[0];
   let storeProducts: StoreProduct[] = [];
   let storeOrders: Array<{
     id: number;
     buyerId: string;
     productName: string;
     price: number;
-    status: string;
+    status: OrderStatus;
     createdAt: string;
   }> = [];
 
   if (hasStore) {
-    storeProducts = await db.select().from(products).where(eq(products.storeId, userStores[0].id));
+    storeProducts = await db.select().from(products).where(eq(products.storeId, userStore.id));
 
     const orderRows = await db
       .select({
@@ -54,7 +68,7 @@ export default async function SellerDashboard() {
       .from(orders)
       .innerJoin(products, eq(orders.productId, products.id))
       .innerJoin(stores, eq(products.storeId, stores.id))
-      .where(and(eq(stores.ownerId, session.user.id), eq(stores.id, userStores[0].id)))
+      .where(and(eq(stores.ownerId, session.user.id), eq(stores.id, userStore.id)))
       .orderBy(desc(orders.createdAt));
 
     storeOrders = orderRows.map((order) => ({
@@ -62,56 +76,222 @@ export default async function SellerDashboard() {
       buyerId: order.buyerId,
       productName: order.productName,
       price: order.price,
-      status: order.status ?? "pending",
+      status: toOrderStatus(order.status),
       createdAt: order.createdAt ? new Date(order.createdAt).toLocaleString("vi-VN") : "Không rõ",
     }));
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">Bảng điều khiển Người Bán</h1>
-      
+    <div className="space-y-6">
+      <header className="rounded-2xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
+        <h1 className="text-2xl font-bold text-slate-900">Bảng điều khiển Người Bán</h1>
+        <p className="mt-2 text-sm text-slate-600">Theo dõi gian hàng, quản lý sản phẩm và cập nhật trạng thái đơn hàng tại một nơi.</p>
+      </header>
+
       {hasStore ? (
-        <div className="p-4 border rounded shadow-sm">
-          <h2 className="text-xl font-semibold">Gian hàng của bạn: {userStores[0].name}</h2>
+        <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-900">Gian hàng của bạn: {userStore.name}</h2>
           <div className="mt-6">
-            <h3 className="text-lg font-medium mb-3">Thêm sản phẩm mới</h3>
-            <form className="flex flex-col gap-3 max-w-md" action={async (formData) => {
+            <h3 className="mb-3 text-lg font-medium text-slate-900">Thêm sản phẩm mới</h3>
+            <form className="flex max-w-md flex-col gap-3" action={async (formData) => {
               "use server";
               const name = formData.get("name") as string;
               const price = Number(formData.get("price"));
               const description = formData.get("description") as string;
+              const imageUrl = (formData.get("imageUrl") as string | null)?.trim() || null;
               
               if (name && price > 0) {
                 await db.insert(products).values({
-                  storeId: userStores[0].id,
+                  storeId: userStore.id,
                   name,
                   price,
                   description,
+                  imageUrl,
                 });
                 revalidatePath("/seller");
+                revalidatePath("/");
               }
             }}>
-              <input type="text" name="name" placeholder="Tên sản phẩm" className="border p-2 rounded" required />
-              <input type="number" name="price" placeholder="Giá tiền" className="border p-2 rounded" required />
-              <textarea name="description" placeholder="Mô tả sản phẩm" className="border p-2 rounded"></textarea>
-              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded w-fit">
+              <input
+                type="text"
+                name="name"
+                placeholder="Tên sản phẩm"
+                className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
+                required
+              />
+              <input
+                type="number"
+                name="price"
+                placeholder="Giá tiền"
+                className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
+                required
+              />
+              <textarea
+                name="description"
+                placeholder="Mô tả sản phẩm"
+                className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
+              ></textarea>
+              <input
+                type="url"
+                name="imageUrl"
+                placeholder="Đường dẫn ảnh sản phẩm (không bắt buộc)"
+                className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
+              />
+              <button type="submit" className="w-fit rounded-lg bg-blue-700 px-4 py-2 text-white hover:bg-blue-800">
                 Thêm sản phẩm
               </button>
             </form>
           </div>
 
           <div className="mt-8">
-            <h3 className="text-lg font-medium mb-3">Danh sách sản phẩm</h3>
+            <h3 className="mb-3 text-lg font-medium text-slate-900">Danh sách sản phẩm</h3>
             {storeProducts.length > 0 ? (
               <ul className="space-y-2">
                 {storeProducts.map((product) => (
-                  <li key={product.id} className="border p-3 rounded flex justify-between items-center bg-white">
-                    <div>
-                      <p className="font-semibold">{product.name}</p>
-                      <p className="text-sm text-gray-600">{product.description}</p>
+                  <li
+                    key={product.id}
+                    className="rounded-xl border border-blue-100 bg-blue-50/40 p-3"
+                  >
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[120px_1fr]">
+                      <img
+                        src={product.imageUrl || "/default-product.svg"}
+                        alt={product.name}
+                        className="h-24 w-full rounded-lg border border-blue-100 object-cover bg-white"
+                      />
+
+                      <div className="space-y-2">
+                        <p className="font-semibold text-slate-900">{product.name}</p>
+                        <p className="text-sm text-gray-600">{product.description || "Sản phẩm chưa có mô tả."}</p>
+                        <p className="font-bold text-blue-600">{product.price} VNĐ</p>
+
+                        <details className="rounded-lg border border-blue-100 bg-white/80 p-2">
+                          <summary className="cursor-pointer list-none rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100">
+                            Chỉnh sửa thông tin mặt hàng
+                          </summary>
+
+                          <form
+                            className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2"
+                            action={async (formData) => {
+                              "use server";
+                              const productId = Number(formData.get("productId"));
+                              const nextName = (formData.get("name") as string | null)?.trim() || "";
+                              const nextPrice = Number(formData.get("price"));
+                              const nextDescription = (formData.get("description") as string | null)?.trim() || null;
+                              const nextImageUrl = (formData.get("imageUrl") as string | null)?.trim() || null;
+
+                              if (!Number.isInteger(productId) || productId <= 0 || !nextName || nextPrice <= 0) {
+                                return;
+                              }
+
+                              await db
+                                .update(products)
+                                .set({
+                                  name: nextName,
+                                  price: nextPrice,
+                                  description: nextDescription,
+                                  imageUrl: nextImageUrl,
+                                })
+                                .where(and(eq(products.id, productId), eq(products.storeId, userStore.id)));
+
+                              revalidatePath("/seller");
+                              revalidatePath("/");
+                            }}
+                          >
+                            <input type="hidden" name="productId" value={product.id} />
+                            <input
+                              name="name"
+                              defaultValue={product.name}
+                              className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500"
+                              required
+                            />
+                            <input
+                              name="price"
+                              type="number"
+                              min={1}
+                              defaultValue={product.price}
+                              className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500"
+                              required
+                            />
+                            <textarea
+                              name="description"
+                              defaultValue={product.description ?? ""}
+                              className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500 md:col-span-2"
+                              rows={2}
+                            />
+                            <input
+                              name="imageUrl"
+                              type="url"
+                              defaultValue={product.imageUrl ?? ""}
+                              placeholder="Đường dẫn ảnh"
+                              className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500 md:col-span-2"
+                            />
+                            <div className="flex flex-wrap gap-2 md:col-span-2">
+                              <button
+                                type="submit"
+                                className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                              >
+                                Lưu thay đổi
+                              </button>
+                            </div>
+                          </form>
+                        </details>
+
+                        <div className="flex flex-wrap gap-2">
+                          <form
+                            action={async (formData) => {
+                              "use server";
+                              const productId = Number(formData.get("productId"));
+
+                              if (!Number.isInteger(productId) || productId <= 0) {
+                                return;
+                              }
+
+                              await db
+                                .update(products)
+                                .set({ imageUrl: null })
+                                .where(and(eq(products.id, productId), eq(products.storeId, userStore.id)));
+
+                              revalidatePath("/seller");
+                              revalidatePath("/");
+                            }}
+                          >
+                            <input type="hidden" name="productId" value={product.id} />
+                            <button
+                              type="submit"
+                              className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                            >
+                              Dùng ảnh mặc định
+                            </button>
+                          </form>
+
+                          <form
+                            action={async (formData) => {
+                              "use server";
+                              const productId = Number(formData.get("productId"));
+
+                              if (!Number.isInteger(productId) || productId <= 0) {
+                                return;
+                              }
+
+                              await db
+                                .delete(products)
+                                .where(and(eq(products.id, productId), eq(products.storeId, userStore.id)));
+
+                              revalidatePath("/seller");
+                              revalidatePath("/");
+                            }}
+                          >
+                            <input type="hidden" name="productId" value={product.id} />
+                            <button
+                              type="submit"
+                              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+                            >
+                              Xóa sản phẩm
+                            </button>
+                          </form>
+                        </div>
+                      </div>
                     </div>
-                    <span className="font-bold text-blue-600">{product.price} VNĐ</span>
                   </li>
                 ))}
               </ul>
@@ -121,13 +301,13 @@ export default async function SellerDashboard() {
           </div>
 
           <div className="mt-8">
-            <h3 className="text-lg font-medium mb-3">Đơn hàng của gian hàng</h3>
+            <h3 className="mb-3 text-lg font-medium text-slate-900">Đơn hàng của gian hàng</h3>
             <SellerOrdersPanel initialOrders={storeOrders} />
           </div>
         </div>
       ) : (
-        <div className="p-4 border rounded bg-gray-50">
-          <p className="mb-4">Bạn chưa thiết lập gian hàng nào.</p>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5 shadow-sm">
+          <p className="mb-4 text-slate-700">Bạn chưa thiết lập gian hàng nào.</p>
           <form className="flex gap-2" action={async (formData) => {
             "use server";
             const storeName = formData.get("name") as string;
@@ -143,10 +323,10 @@ export default async function SellerDashboard() {
               type="text" 
               name="name" 
               placeholder="Nhập tên gian hàng mới..." 
-              className="border p-2 rounded w-64"
+              className="w-64 rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
               required 
             />
-            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
+            <button type="submit" className="rounded-lg bg-blue-700 px-4 py-2 text-white hover:bg-blue-800">
               Tạo gian hàng
             </button>
           </form>

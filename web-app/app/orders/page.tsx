@@ -42,8 +42,8 @@ export default async function OrdersPage() {
     .orderBy(desc(orders.createdAt));
 
   return (
-    <main className="p-8 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
+    <main className="mx-auto w-full max-w-5xl px-1 py-2 sm:px-2">
+      <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Lịch sử mua hàng</h1>
         <Link href="/" className="text-blue-700 hover:underline">
           Quay lại trang chủ
@@ -51,7 +51,7 @@ export default async function OrdersPage() {
       </div>
 
       {buyerOrders.length === 0 ? (
-        <div className="border rounded p-6 bg-white">
+        <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">
           <p className="text-gray-600">Bạn chưa có đơn hàng nào thành công.</p>
         </div>
       ) : (
@@ -60,7 +60,7 @@ export default async function OrdersPage() {
             const status = (order.status ?? "pending") as OrderStatus;
 
             return (
-              <div key={order.id} className="border rounded p-4 bg-white shadow-sm">
+              <div key={order.id} className="rounded-2xl border border-blue-100 p-4 bg-white shadow-sm">
                 <div className="flex flex-wrap justify-between items-start gap-3">
                   <div>
                     <p className="font-semibold">{order.productName}</p>

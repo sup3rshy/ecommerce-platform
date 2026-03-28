@@ -14,12 +14,12 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const params = await searchParams;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-      <div className="p-8 bg-white rounded-lg shadow-md text-center">
-        <h1 className="text-3xl font-bold text-green-600 mb-4">Thanh toán thành công!</h1>
+    <div className="mx-auto w-full max-w-3xl py-6">
+      <div className="rounded-3xl border border-blue-100 bg-white p-8 text-center shadow-md">
+        <h1 className="mb-4 text-3xl font-bold text-blue-700">Thanh toán thành công!</h1>
         <p className="mb-6 text-gray-600">Cảm ơn bạn đã trải nghiệm hệ thống thanh toán mô phỏng.</p>
         {params.fromCart === "1" && (
-          <div className="mb-4 text-sm text-gray-600">
+          <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-sm text-gray-700">
             {params.items && <p>Tổng sản phẩm đã thanh toán: {params.items}</p>}
             {params.total && <p>Tổng tiền: {params.total} VNĐ</p>}
           </div>

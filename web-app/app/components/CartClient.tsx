@@ -132,12 +132,12 @@ export default function CartClient() {
   };
 
   if (loading) {
-    return <p className="text-gray-500">Đang tải giỏ hàng...</p>;
+    return <p className="text-slate-500">Đang tải giỏ hàng...</p>;
   }
 
   if (error) {
     return (
-      <div className="border rounded p-4 bg-red-50 text-red-700">
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">
         <p>{error}</p>
         <Link href="/" className="inline-block mt-3 text-blue-700 underline">
           Quay lại trang chủ
@@ -149,23 +149,23 @@ export default function CartClient() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Giỏ hàng của bạn</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Giỏ hàng của bạn</h1>
         <Link href="/" className="text-blue-700 hover:underline">
           Tiếp tục mua sắm
         </Link>
       </div>
 
       {items.length === 0 ? (
-        <div className="border rounded p-6 bg-white">
+        <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">
           <p className="text-gray-600">Giỏ hàng đang trống.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {items.map((item) => (
-            <div key={item.id} className="border rounded p-4 bg-white shadow-sm">
+            <div key={item.id} className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
               <div className="flex justify-between gap-4">
                 <div>
-                  <h2 className="font-semibold text-lg">{item.name}</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">{item.name}</h2>
                   <p className="text-sm text-gray-600">{item.description}</p>
                   <p className="mt-2 text-blue-700 font-semibold">{item.price} VNĐ</p>
                 </div>
@@ -179,14 +179,14 @@ export default function CartClient() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                    className="w-8 h-8 rounded border bg-gray-100 hover:bg-gray-200"
+                    className="h-8 w-8 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100"
                   >
                     -
                   </button>
                   <span className="min-w-8 text-center font-semibold">{item.quantity}</span>
                   <button
                     onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                    className="w-8 h-8 rounded border bg-gray-100 hover:bg-gray-200"
+                    className="h-8 w-8 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100"
                   >
                     +
                   </button>
@@ -194,7 +194,7 @@ export default function CartClient() {
 
                 <button
                   onClick={() => removeItem(item.id)}
-                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                  className="text-sm font-medium text-slate-500 hover:text-slate-700"
                 >
                   Xóa
                 </button>
@@ -202,7 +202,7 @@ export default function CartClient() {
             </div>
           ))}
 
-          <div className="border rounded p-5 bg-white shadow-sm">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
             <div className="flex justify-between text-sm text-gray-600">
               <span>Tổng số lượng</span>
               <span>{totalItems}</span>
