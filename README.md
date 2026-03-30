@@ -37,7 +37,7 @@ Nginx (port 8000)          ← Reverse proxy
 
 ```bash
 # Tại thư mục gốc của project
-docker-compose up -d
+docker compose up -d
 ```
 
 Lệnh này khởi động 3 container:
@@ -124,7 +124,7 @@ Các tài khoản sau đã được tạo sẵn trong Keycloak realm:
 
 ```
 ecommerce-platform/
-├── docker-compose.yml          # Định nghĩa PostgreSQL + Keycloak + Nginx
+├── docker compose.yml          # Định nghĩa PostgreSQL + Keycloak + Nginx
 ├── keycloak/
 │   └── ecommerce-realm.json    # Cấu hình realm, roles, users mặc định
 ├── nginx/

@@ -1698,15 +1698,15 @@
     "envelopeFrom": "",
     "ssl": "true",
     "timeout": "10000",
-    "password": "**********",
+    "password": "hehe dont steal my secret",
     "port": "465",
     "host": "smtp.gmail.com",
     "replyTo": "",
-    "from": "minhtrietlove@gmail.com",
+    "from": "m1zuguchi2201@gmail.com",
     "fromDisplayName": "Ecommerce Platform Support",
     "authType": "basic",
     "connectionTimeout": "10000",
-    "user": "minhtrietlove@gmail.com"
+    "user": "m1zuguchi2201@gmail.com"
   },
   "eventsEnabled": false,
   "eventsListeners": [
