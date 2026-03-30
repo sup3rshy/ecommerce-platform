@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "../../../db";
-import { orders, products } from "../../../db/schema";
+import { orders, products, stores } from "../../../db/schema";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -17,8 +17,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Tài khoản này không có quyền mua hàng." }, { status: 403 });
   }
 
-  const { productId } = await req.json();
-  const parsedProductId = Number(productId);
+  const body = await req.json().catch(() => null);
+  const parsedProductId = Number(body?.productId);
+  const quantity = Math.max(1, Math.floor(Number(body?.quantity) || 1));
+
   if (!Number.isInteger(parsedProductId) || parsedProductId <= 0) {
     return NextResponse.json({ error: "Sản phẩm không hợp lệ." }, { status: 400 });
   }
@@ -28,17 +30,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Không tìm thấy sản phẩm." }, { status: 404 });
   }
 
-  // Giả lập xử lý ở cổng thanh toán
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Không cho seller mua sản phẩm của chính mình
+  const ownStore = await db
+    .select({ id: stores.id })
+    .from(stores)
+    .where(and(eq(stores.ownerId, session.user.id!), eq(stores.id, product[0].storeId)))
+    .limit(1);
 
-  const inserted = await db
-    .insert(orders)
-    .values({
-    userId: session.user.id,
-    productId: parsedProductId,
-    status: "pending",
-    })
-    .returning({ id: orders.id });
+  if (ownStore.length > 0) {
+    return NextResponse.json({ error: "Bạn không thể mua sản phẩm của chính mình." }, { status: 403 });
+  }
+
+  if (product[0].stock < quantity) {
+    return NextResponse.json({ error: `Không đủ tồn kho (còn ${product[0].stock}).` }, { status: 409 });
+  }
+
+  const inserted = await db.transaction(async (tx) => {
+    const result = await tx
+      .insert(orders)
+      .values({
+        userId: session.user!.id!,
+        productId: parsedProductId,
+        quantity,
+        unitPrice: product[0].price,
+        status: "pending",
+      })
+      .returning({ id: orders.id });
+
+    await tx
+      .update(products)
+      .set({ stock: sql`${products.stock} - ${quantity}` })
+      .where(eq(products.id, parsedProductId));
+
+    return result;
+  });
 
   const orderId = inserted[0]?.id;
   const redirectUrl = `/success?orderId=${orderId}&product=${encodeURIComponent(product[0].name)}`;

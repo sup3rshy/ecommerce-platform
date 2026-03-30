@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
@@ -7,15 +7,24 @@ export const stores = pgTable("stores", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const products = pgTable("products", {
-  id: serial("id").primaryKey(),
-  storeId: integer("store_id").references(() => stores.id),
-  name: text("name").notNull(),
-  price: integer("price").notNull(),
-  description: text("description"),
-  imageUrl: text("image_url"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    price: integer("price").notNull(),
+    stock: integer("stock").notNull().default(0),
+    description: text("description"),
+    imageUrl: text("image_url"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    storeIdIdx: index("products_store_id_idx").on(table.storeId),
+  })
+);
 
 export const sellerUpgradeRequests = pgTable("seller_upgrade_requests", {
   id: serial("id").primaryKey(),
@@ -28,13 +37,22 @@ export const sellerUpgradeRequests = pgTable("seller_upgrade_requests", {
   reviewedAt: timestamp("reviewed_at"),
 });
 
-export const orders = pgTable("orders", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  productId: integer("product_id").references(() => products.id),
-  status: text("status").default("pending"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const orders = pgTable(
+  "orders",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: integer("unit_price").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("orders_user_id_idx").on(table.userId),
+    productIdIdx: index("orders_product_id_idx").on(table.productId),
+  })
+);
 
 export const cartItems = pgTable(
   "cart_items",
@@ -43,11 +61,12 @@ export const cartItems = pgTable(
     userId: text("user_id").notNull(),
     productId: integer("product_id")
       .notNull()
-      .references(() => products.id),
+      .references(() => products.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => ({
     userProductUnique: uniqueIndex("cart_user_product_unique").on(table.userId, table.productId),
+    userIdIdx: index("cart_items_user_id_idx").on(table.userId),
   })
 );

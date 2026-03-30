@@ -12,9 +12,8 @@ export default async function AdminOverviewPage() {
     db.select({ count: sql<number>`count(*)::int` }).from(stores),
     db.select({ count: sql<number>`count(*)::int` }).from(products),
     db
-      .select({ total: sql<number>`coalesce(sum(${products.price}), 0)::int` })
-      .from(orders)
-      .innerJoin(products, eq(orders.productId, products.id)),
+      .select({ total: sql<number>`coalesce(sum(${orders.unitPrice} * ${orders.quantity}), 0)::int` })
+      .from(orders),
     db
       .select({
         id: orders.id,
@@ -22,7 +21,8 @@ export default async function AdminOverviewPage() {
         createdAt: orders.createdAt,
         productName: products.name,
         storeName: stores.name,
-        amount: products.price,
+        quantity: orders.quantity,
+        unitPrice: orders.unitPrice,
         buyerId: orders.userId,
       })
       .from(orders)
@@ -100,8 +100,8 @@ export default async function AdminOverviewPage() {
                     <td className="whitespace-nowrap px-4 py-3">{order.buyerId}</td>
                     <td className="whitespace-nowrap px-4 py-3">{order.productName}</td>
                     <td className="whitespace-nowrap px-4 py-3">{order.storeName}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{order.status ?? "pending"}</td>
-                    <td className="whitespace-nowrap px-4 py-3">{formatCurrency(order.amount)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{order.status}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{formatCurrency(order.unitPrice * order.quantity)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {order.createdAt ? new Date(order.createdAt).toLocaleString("vi-VN") : "Không rõ"}
                     </td>

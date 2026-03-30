@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-keycloak}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
       - "5432:5432"
     volumes:
@@ -15,11 +15,11 @@ services:
     command: start-dev --import-realm
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: admin
-      KC_DB_PASSWORD: password
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
       - "8080:8080"
     volumes:
@@ -28,7 +28,7 @@ services:
       - postgres
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.27
     ports:
       - "8000:80"
     volumes:

@@ -7,13 +7,12 @@ import { authOptions } from "../api/auth/[...nextauth]/route";
 import { db } from "../../db";
 import { orders, products } from "../../db/schema";
 
-type OrderStatus = "pending" | "shipping" | "completed" | "paid";
+type OrderStatus = "pending" | "shipping" | "completed";
 
 const statusLabelMap: Record<OrderStatus, string> = {
   pending: "Chờ xử lý",
   shipping: "Đang giao hàng",
   completed: "Đã hoàn thành",
-  paid: "Đã thanh toán",
 };
 
 export default async function OrdersPage() {
@@ -32,9 +31,10 @@ export default async function OrdersPage() {
     .select({
       id: orders.id,
       status: orders.status,
+      quantity: orders.quantity,
+      unitPrice: orders.unitPrice,
       createdAt: orders.createdAt,
       productName: products.name,
-      productPrice: products.price,
     })
     .from(orders)
     .innerJoin(products, eq(orders.productId, products.id))
@@ -70,7 +70,8 @@ export default async function OrdersPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-blue-700">{order.productPrice} VNĐ</p>
+                    <p className="text-sm text-gray-600">SL: {order.quantity} x {order.unitPrice.toLocaleString("vi-VN")} VNĐ</p>
+                    <p className="font-bold text-blue-700">{(order.unitPrice * order.quantity).toLocaleString("vi-VN")} VNĐ</p>
                     <p className="text-sm text-gray-700 mt-1">Trạng thái: {statusLabelMap[status] ?? status}</p>
                   </div>
                 </div>

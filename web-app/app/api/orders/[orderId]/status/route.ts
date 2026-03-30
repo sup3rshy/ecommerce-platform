@@ -10,6 +10,12 @@ type OrderStatus = "pending" | "shipping" | "completed";
 
 const ALLOWED_STATUSES: OrderStatus[] = ["pending", "shipping", "completed"];
 
+const VALID_TRANSITIONS: Record<string, OrderStatus[]> = {
+  pending: ["shipping"],
+  shipping: ["completed"],
+  completed: [],
+};
+
 type RouteContext = {
   params: Promise<{ orderId: string }> | { orderId: string };
 };
@@ -41,7 +47,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   }
 
   const matchedOrder = await db
-    .select({ orderId: orders.id })
+    .select({ orderId: orders.id, currentStatus: orders.status })
     .from(orders)
     .innerJoin(products, eq(orders.productId, products.id))
     .innerJoin(stores, eq(products.storeId, stores.id))
@@ -50,6 +56,16 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   if (matchedOrder.length === 0) {
     return NextResponse.json({ error: "Bạn không có quyền cập nhật đơn hàng này." }, { status: 404 });
+  }
+
+  const currentStatus = matchedOrder[0].currentStatus ?? "pending";
+  const allowedNext = VALID_TRANSITIONS[currentStatus] ?? [];
+
+  if (!allowedNext.includes(nextStatus as OrderStatus)) {
+    return NextResponse.json(
+      { error: `Không thể chuyển từ "${currentStatus}" sang "${nextStatus}".` },
+      { status: 422 }
+    );
   }
 
   await db.update(orders).set({ status: nextStatus }).where(eq(orders.id, orderId));

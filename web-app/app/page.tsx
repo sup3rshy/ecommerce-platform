@@ -2,7 +2,7 @@
 
 import { getServerSession } from "next-auth";
 import Link from "next/link";
-import { and, eq, gte, ilike, lte } from "drizzle-orm";
+import { and, eq, gte, ilike, lte, sql } from "drizzle-orm";
 
 import { authOptions } from "./api/auth/[...nextauth]/route";
 import LogoutButton from "./components/LogoutButton";
@@ -40,7 +40,9 @@ export default async function Home({ searchParams }: PageProps) {
   const filters = [];
 
   if (keyword) {
-    filters.push(ilike(products.name, `%${keyword}%`));
+    // Escape SQL LIKE wildcards để tránh wildcard injection
+    const escapedKeyword = keyword.replace(/[%_\\]/g, "\\$&");
+    filters.push(ilike(products.name, `%${escapedKeyword}%`));
   }
 
   if (hasMinPrice) {
@@ -59,12 +61,12 @@ export default async function Home({ searchParams }: PageProps) {
   let cartCount = 0;
 
   if (session?.user?.id && canBuy) {
-    const buyerCart = await db
-      .select({ quantity: cartItems.quantity })
+    const result = await db
+      .select({ total: sql<number>`coalesce(sum(${cartItems.quantity}), 0)::int` })
       .from(cartItems)
       .where(eq(cartItems.userId, session.user.id));
 
-    cartCount = buyerCart.reduce((sum, item) => sum + item.quantity, 0);
+    cartCount = result[0]?.total ?? 0;
   }
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type PricePreset = {
@@ -25,37 +25,37 @@ export default function ProductSearchFilters() {
   const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") ?? "");
   const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") ?? "");
 
-  const applySearch = useMemo(
-    () =>
-      (next: { q?: string; minPrice?: string; maxPrice?: string }) => {
-        const params = new URLSearchParams(searchParams.toString());
+  // Dùng ref để tránh re-create callback khi state thay đổi
+  const stateRef = useRef({ keyword, minPrice, maxPrice });
+  stateRef.current = { keyword, minPrice, maxPrice };
 
-        const q = next.q ?? keyword;
-        const min = next.minPrice ?? minPrice;
-        const max = next.maxPrice ?? maxPrice;
+  const applySearch = useCallback(
+    (next: { q?: string; minPrice?: string; maxPrice?: string }) => {
+      const current = stateRef.current;
+      const params = new URLSearchParams();
 
-        if (q.trim()) params.set("q", q.trim());
-        else params.delete("q");
+      const q = (next.q ?? current.keyword).trim();
+      const min = (next.minPrice ?? current.minPrice).trim();
+      const max = (next.maxPrice ?? current.maxPrice).trim();
 
-        if (min.trim()) params.set("minPrice", min.trim());
-        else params.delete("minPrice");
+      if (q) params.set("q", q);
+      if (min) params.set("minPrice", min);
+      if (max) params.set("maxPrice", max);
 
-        if (max.trim()) params.set("maxPrice", max.trim());
-        else params.delete("maxPrice");
-
-        const query = params.toString();
-        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-      },
-    [keyword, minPrice, maxPrice, pathname, router, searchParams]
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router]
   );
 
   useEffect(() => {
     const timer = setTimeout(() => {
       applySearch({ q: keyword });
-    }, 250);
+    }, 400);
 
     return () => clearTimeout(timer);
-  }, [keyword, applySearch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword]);
 
   const applyPricePreset = (preset: PricePreset) => {
     const nextMin = preset.minPrice ? String(preset.minPrice) : "";

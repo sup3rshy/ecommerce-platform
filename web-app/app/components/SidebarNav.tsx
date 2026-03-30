@@ -78,14 +78,12 @@ export default function SidebarNav({ isAuthenticated, userName, roles, idToken }
       <div className="mt-6 space-y-3 border-t border-blue-100 pt-4">
         {isAuthenticated ? (
           <>
-            <a
-              href="http://localhost:8080/realms/ecommerce-realm/account"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/account"
               className="inline-flex w-full items-center justify-center rounded-xl border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
             >
               Quản lý tài khoản
-            </a>
+            </Link>
             <LogoutButton idToken={idToken} />
           </>
         ) : (
