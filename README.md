@@ -1,204 +1,294 @@
-# Ecommerce Platform
+# Ecommerce Platform — Multi-App SSO Demo
 
-Nền tảng thương mại điện tử đa vai trò (buyer / seller / admin) xây dựng với Next.js, Keycloak và PostgreSQL.
+Hệ sinh thái nhiều app dùng chung 1 Keycloak làm IdP trung tâm — mô phỏng kiến trúc Shopee / ShopeeFood / ShopeePay.
 
-## Kiến trúc tổng quan
+Hiện có 2 app:
+- **ecommerce** ([web-app/](web-app)) — chợ điện tử cho buyer/seller (đăng ký bán, mua, đặt đơn).
+- **seller-workspace** ([seller-workspace/](seller-workspace)) — back-office riêng cho chủ shop + nhân viên (kho / CSKH / kế toán).
+
+Cả 2 app login chung qua Keycloak realm `ecommerce-realm`. 1 lần đăng nhập → vào được mọi app (silent SSO).
+
+---
+
+## Kiến trúc
 
 ```
-Browser
-  │
-  ▼
-Nginx (port 8000)          ← Reverse proxy
-  ├── /auth/*  → Keycloak (port 8080)   ← Identity Provider
-  └── /*       → Next.js  (port 3000)   ← Monolithic App
+                 Browser
                     │
-                    ▼
-              PostgreSQL (port 5432)     ← App Database
+      ┌─────────────┼─────────────┐
+      ▼             ▼             ▼
+  :3000         :3100         :8080
+ecommerce  seller-workspace  Keycloak
+  (web-app)                 (Identity Provider)
+      │             │             │
+      └──────┬──────┘             │
+             ▼                    ▼
+        Postgres (5432) ◄─────────┘
+        ├── ecommerce DB  (stores, products, orders, cart)
+        ├── keycloak DB   (Keycloak data + staff_invitations,
+        │                  store_permissions, audit_logs)
+        └── (shared instance, dev mode)
+
+Nginx (:8000) — reverse proxy gom Keycloak + 2 app vào 1 origin
+  /        → web-app:3000
+  /seller/ → seller-workspace:3100
+  /auth/   → keycloak:8080
 ```
 
-| Thành phần | Mô tả |
-|------------|--------|
-| **Next.js 16** | App Router, Server Actions, Tailwind CSS v4 |
-| **Keycloak** | Quản lý user, role (buyer/seller/admin), OAuth2/OpenID Connect |
-| **PostgreSQL** | Lưu stores, products, orders, cart, seller requests |
-| **Nginx** | Reverse proxy, gom Keycloak + Next.js chung 1 origin |
-| **NextAuth v4** | Tích hợp Keycloak vào Next.js |
-| **Drizzle ORM** | Type-safe query builder cho PostgreSQL |
+| Stack | Version | Note |
+|---|---|---|
+| Next.js | 16 | App Router, Server Actions, Turbopack |
+| NextAuth | 4.24 | OIDC client cho Keycloak |
+| Keycloak | latest | Realm import từ `keycloak/ecommerce-realm.json` |
+| Drizzle ORM | 0.45 | Type-safe SQL |
+| PostgreSQL | 15 | 1 instance, 2 database |
+| Nginx | latest | Reverse proxy |
+| Node.js | 22 LTS | (Node 25 lỗi silent-exit với Next 16, dùng 22) |
+
+---
 
 ## Yêu cầu
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (đang chạy)
-- [Node.js](https://nodejs.org/) >= 18
-- npm (đi kèm Node.js)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) đang chạy
+- Node.js **22 LTS** (khuyên dùng nvm)
+- npm
 
-## Hướng dẫn chạy
+WSL2 OK. Nếu dùng WSL: tất cả `npm install` và `npm run dev` chạy **bên trong WSL**, không share `node_modules` với Windows.
 
-### 1. Khởi động Infrastructure
+---
+
+## Setup từ đầu
+
+### 1. Clone và start hạ tầng
 
 ```bash
-# Tại thư mục gốc của project
+git clone <repo>
+cd ecommerce-platform
 docker compose up -d
 ```
 
-Lệnh này khởi động 3 container:
-
-| Container | Port | Chức năng |
-|-----------|------|-----------|
-| PostgreSQL | 5432 | Database |
-| Keycloak | 8080 | Identity Provider |
-| Nginx | 8000 | Reverse Proxy |
-
-Chờ **~30-60 giây** để Keycloak import realm xong. Kiểm tra bằng cách truy cập http://localhost:8080 (đăng nhập admin console: `admin` / `admin`).
-
-### 2. Tạo database riêng cho app
-
-PostgreSQL mặc định chỉ có database `keycloak`. Cần tạo database `ecommerce` riêng cho app:
+Đợi ~30-60s để Keycloak import realm. Verify:
 
 ```bash
-docker exec -it ecommerce-platform-postgres-1 psql -U admin -d keycloak -c "CREATE DATABASE ecommerce;"
+curl -s http://localhost:8080/realms/ecommerce-realm/.well-known/openid-configuration | head -c 200
 ```
 
-> Nếu tên container khác, chạy `docker ps` để xem tên chính xác.
+Phải thấy JSON có `"issuer": "http://localhost:8080/realms/ecommerce-realm"`.
 
-### 3. Tạo file environment
+### 2. Tạo databases riêng cho từng app
+
+Postgres mặc định chỉ có DB `keycloak`. Mỗi app cần DB riêng (tránh drizzle nhầm bảng Keycloak):
+
+```bash
+docker exec -i $(docker ps -qf "name=postgres") \
+  psql -U admin -d postgres -c "CREATE DATABASE ecommerce; CREATE DATABASE seller_workspace;"
+```
+
+### 3. Setup web-app (ecommerce)
 
 ```bash
 cd web-app
-cp .env.example .env.local
+cp .env.example .env.local   # Hoặc tạo thủ công, xem nội dung bên dưới
+npm install
+npm run db:push              # Tạo bảng stores, products, orders, cart, ...
+npm run dev                  # http://localhost:3000
 ```
 
-Hoặc tạo file `web-app/.env.local` thủ công với nội dung:
+`.env.local` cho web-app:
 
 ```env
-# Database
 DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce
-
-# NextAuth
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=my-super-secret-key-change-in-production
-
-# Keycloak
 KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm
 KEYCLOAK_CLIENT_ID=nextjs-app
-KEYCLOAK_CLIENT_SECRET=changeme-generate-random-secret
+KEYCLOAK_CLIENT_SECRET=my-super-secret-key
 ```
 
-### 4. Cài dependencies và tạo bảng trong database
+### 4. Setup seller-workspace
+
+Mở **terminal mới** (giữ web-app chạy):
 
 ```bash
-cd web-app
+cd seller-workspace
+cp .env.example .env
 npm install
-
-# Push schema từ code vào PostgreSQL (tạo bảng stores, products, orders, ...)
-DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce npx drizzle-kit push
+npm run db:push              # Tạo bảng staff_invitations, store_permissions, audit_logs
+npm run dev                  # http://localhost:3100
 ```
 
-> `drizzle-kit` không tự đọc `.env.local`, nên cần truyền `DATABASE_URL` trực tiếp.
-> Chỉ cần chạy **1 lần** khi setup. Nếu sau này sửa `db/schema.ts`, chạy lại để cập nhật.
+`.env` cho seller-workspace:
 
-### 5. Chạy ứng dụng
-
-```bash
-npm run dev
+```env
+DATABASE_URL=postgres://admin:password@localhost:5432/seller_workspace
+NEXTAUTH_URL=http://localhost:3100
+NEXTAUTH_SECRET=change-me-seller-workspace
+KEYCLOAK_CLIENT_ID=seller-workspace
+KEYCLOAK_CLIENT_SECRET=seller-workspace-secret
+KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm
 ```
 
-### 6. Truy cập
+### 5. Test
 
-| URL | Mô tả |
-|-----|-------|
-| http://localhost:3000 | Next.js (trực tiếp) |
-| http://localhost:8000 | Qua Nginx gateway |
-| http://localhost:8080 | Keycloak Admin Console |
+| URL | Mục đích |
+|---|---|
+| http://localhost:3000 | ecommerce (buyer/seller) |
+| http://localhost:3100 | seller-workspace (chủ shop / nhân viên) |
+| http://localhost:8080 | Keycloak Admin (admin/admin) |
+| http://localhost:8000 | Nginx gateway gom cả 3 |
 
-## Tài khoản test
+---
 
-Các tài khoản sau đã được tạo sẵn trong Keycloak realm:
+## Tài khoản demo
 
-| Username | Password | Role | Mô tả |
-|----------|----------|------|-------|
-| `buyer1` | `Buyer1@2024` | buyer | Người mua hàng |
-| `seller1` | `Seller1@2024` | seller | Người bán hàng |
-| `admin1` | `Admin1@2024` | admin | Quản trị viên |
+Có sẵn trong realm sau khi import:
 
-## Cấu trúc thư mục
+| Username | Password | Role | Group |
+|---|---|---|---|
+| `buyer1` | `123456` | buyer | - |
+| `seller1` | `123456` | seller | - |
+| `admin1` | `admin123` | admin | - |
+| `warehouse1` | `123456` | staff-warehouse | /store-demo-1/warehouse |
+| `cs1` | `123456` | staff-cs | /store-demo-1/cs |
+| `finance1` | `123456` | staff-finance | /store-demo-1/finance |
+
+---
+
+## Test SSO (4 kịch bản)
+
+### 1. Silent SSO cross-app
+
+1. Login `seller1` ở http://localhost:3000.
+2. Mở tab mới → http://localhost:3100 → bấm "Đăng nhập SSO".
+3. **Kỳ vọng**: redirect qua Keycloak → quay về luôn, không cần nhập password.
+
+Verify trong DevTools Network: request `/auth/realms/.../auth?...` phải trả 302 thẳng về callback, không qua trang login form.
+
+### 2. Multi-staff per store
+
+1. Login `warehouse1` ở http://localhost:3100 → vào `/dashboard`.
+2. Sẽ thấy `roles: staff-warehouse`, `groups: /store-demo-1/warehouse`.
+3. Logout → login `cs1` → thấy role + group khác.
+
+→ Minh hoạ Keycloak Groups (cùng store, khác quyền).
+
+### 3. Server actions + audit log
+
+1. Login `seller1` ở http://localhost:3100 → `/staff` → mời 1 email + role.
+2. Vào `/audit` → thấy log `staff.invite` xuất hiện.
+
+### 4. Single Logout (front-channel)
+
+1. Login ở cả 2 app.
+2. Logout ở 1 app → reload app còn lại → khi gọi token lần kế tiếp, Keycloak phát hiện session đã chết.
+
+> Chưa có **back-channel logout** (cần config thêm). Là task tiếp theo.
+
+---
+
+## Cấu trúc
 
 ```
 ecommerce-platform/
-├── docker compose.yml          # Định nghĩa PostgreSQL + Keycloak + Nginx
+├── docker-compose.yml          # Postgres + Keycloak + Nginx
 ├── keycloak/
-│   └── ecommerce-realm.json    # Cấu hình realm, roles, users mặc định
+│   └── ecommerce-realm.json    # Realm + 2 clients + roles + groups + users
 ├── nginx/
-│   └── nginx.conf              # Reverse proxy config
-└── web-app/                    # Next.js application
-    ├── app/
-    │   ├── page.tsx            # Trang chủ - danh sách sản phẩm
-    │   ├── cart/               # Giỏ hàng
-    │   ├── orders/             # Lịch sử đơn hàng
-    │   ├── product/[id]/       # Chi tiết sản phẩm
-    │   ├── seller/             # Dashboard seller + đăng ký bán hàng
-    │   ├── admin/              # Dashboard admin (users, stores)
-    │   ├── api/                # API routes
-    │   │   ├── auth/           # NextAuth + Keycloak
-    │   │   ├── cart/           # CRUD giỏ hàng + checkout
-    │   │   ├── orders/         # Cập nhật trạng thái đơn hàng
-    │   │   ├── seller/         # Đăng ký seller
-    │   │   ├── admin/          # Duyệt yêu cầu seller
-    │   │   └── mock-payment/   # Thanh toán giả lập
-    │   └── components/         # React components
-    ├── db/
-    │   ├── schema.ts           # Drizzle ORM schema (bảng DB)
-    │   └── index.ts            # Database connection
-    ├── lib/
-    │   └── keycloak-admin.ts   # Keycloak Admin API client
-    ├── proxy.ts                # NextAuth middleware (RBAC)
-    └── types/
-        └── next-auth.d.ts      # TypeScript type augmentation
+│   └── nginx.conf              # Reverse proxy + rate limit
+├── web-app/                    # ecommerce app (port 3000)
+│   ├── app/                    # buyer/seller/admin pages + API
+│   ├── db/schema.ts            # stores, products, orders, cart, seller_upgrade_requests
+│   ├── lib/keycloak-admin.ts   # Keycloak Admin API client
+│   └── proxy.ts                # NextAuth middleware (RBAC)
+├── seller-workspace/           # back-office app (port 3100)
+│   ├── app/
+│   │   ├── api/auth/[...nextauth]/route.ts  # OIDC + cookie name riêng
+│   │   ├── components/TopBar.tsx
+│   │   ├── dashboard/page.tsx  # identity + roles + groups
+│   │   ├── staff/page.tsx      # mời + thu hồi nhân viên
+│   │   └── audit/page.tsx      # audit log read-only
+│   ├── db/schema.ts            # staff_invitations, store_permissions, audit_logs
+│   ├── lib/audit.ts            # helper ghi audit
+│   └── proxy.ts                # bảo vệ /dashboard, /staff, /audit
+├── README.md
+└── todo.md                     # Lộ trình mở rộng (ShopPay, SAML, FreeIPA, ...)
 ```
 
-## Database Schema
+---
 
+## Database schema
+
+**`ecommerce` DB** (web-app):
 ```
-stores                    products                 orders
-┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│ id (PK)      │────┐    │ id (PK)      │────┐    │ id (PK)      │
-│ owner_id     │    └───→│ store_id (FK)│    └───→│ product_id   │
-│ name         │         │ name         │         │ user_id      │
-│ created_at   │         │ price        │         │ quantity     │
-└──────────────┘         │ stock        │         │ unit_price   │
-                         │ description  │         │ status       │
-                         │ image_url    │         │ created_at   │
-                         │ created_at   │         └──────────────┘
-                         └──────────────┘
-
-cart_items                     seller_upgrade_requests
-┌──────────────────┐          ┌──────────────────┐
-│ id (PK)          │          │ id (PK)          │
-│ user_id          │          │ user_id          │
-│ product_id (FK)  │          │ store_name       │
-│ quantity         │          │ status           │
-│ created_at       │          │ reviewed_by      │
-└──────────────────┘          │ admin_note       │
-                              │ requested_at     │
-                              │ reviewed_at      │
-                              └──────────────────┘
+stores  ─┬─→ products  ─┬─→ orders
+         │              └─→ cart_items
+         └─ seller_upgrade_requests
 ```
 
-## Luồng nghiệp vụ chính
+**`keycloak` DB** (Keycloak + seller-workspace):
+```
+[Keycloak schema mặc định]
++
+staff_invitations    (storeId, email, role, status, invitedBy)
+store_permissions    (storeId, userId, role, grantedAt, revokedAt)
+audit_logs           (storeId, actorId, action, resource, metadata, createdAt)
+```
 
-### Flow A: Đăng nhập / Đăng ký
-1. User truy cập app → Click "Đăng nhập với Keycloak"
-2. Redirect tới Keycloak login page
-3. Đăng nhập thành công → Keycloak trả JWT về app
-4. NextAuth lưu session với roles từ JWT
+> Production sẽ tách riêng DB cho seller-workspace. Hiện share để demo gọn.
 
-### Flow B: Buyer đăng ký bán hàng
-1. Buyer vào trang "Đăng ký bán hàng" → Nhập tên gian hàng
-2. Tạo `seller_upgrade_request` (status: pending)
-3. Admin vào trang quản trị → Duyệt yêu cầu
-4. Hệ thống assign role `seller` trên Keycloak + tạo store trong DB
-5. Buyer đăng nhập lại để nhận role mới
+---
 
-### Flow C: Mua hàng
-1. Buyer thêm sản phẩm vào giỏ / mua trực tiếp
-2. Checkout → Tạo order (status: pending)
-3. Seller cập nhật trạng thái: pending → shipping → completed
+## Troubleshooting
+
+**`unauthorized_client (Invalid client credentials)` khi callback**
+→ Keycloak chưa load client mới. Chạy:
+```bash
+docker exec -i $(docker ps -qf "name=postgres") psql -U admin -d postgres -c "DROP DATABASE keycloak;"
+docker exec -i $(docker ps -qf "name=postgres") psql -U admin -d postgres -c "CREATE DATABASE keycloak;"
+docker compose restart keycloak
+```
+(Chỉ wipe DB Keycloak, không đụng `ecommerce`.)
+
+**`/dashboard` redirect về signin dù đã login**
+→ Cookie name của 2 app phải khớp với `cookieName` truyền vào `getToken()` trong `proxy.ts`. Hiện đã set đúng (`seller-workspace.session-token`), nếu sửa thì sửa cả 2 chỗ.
+
+**`Cannot find module '../lightningcss.linux-x64-gnu.node'`**
+→ Native binary thiếu trên WSL. seller-workspace đã bỏ Tailwind v4 nên không cần. Nếu thêm lại, dùng:
+```bash
+npm install --include=optional
+# hoặc
+npm install lightningcss-linux-x64-gnu --no-save --force
+```
+
+**Next dev exit silently sau "Ready"**
+→ Đang dùng Node 25. Chuyển Node 22 LTS:
+```bash
+nvm use 22
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**`database "ecommerce" does not exist`**
+→ Quên bước 2 (tạo DB). Chạy lệnh `CREATE DATABASE ecommerce;` ở phần Setup.
+
+**Đã chạy `npm audit fix --force` và mọi thứ hỏng**
+→ Lệnh đó downgrade `next-auth` về v3, vỡ tất cả import. Restore package.json:
+```json
+"next-auth": "^4.24.13",
+"drizzle-kit": "^0.31.10"
+```
+Rồi `rm -rf node_modules package-lock.json && npm install`.
+
+---
+
+## Lộ trình mở rộng
+
+Xem [todo.md](todo.md) cho roadmap đầy đủ. Các task lớn còn lại:
+
+- [ ] App **ShopPay** (ví điện tử) — minh hoạ MFA bắt buộc.
+- [ ] **SAML 2.0 Identity Brokering** — nhân viên seller login bằng IdP công ty (Azure AD / Okta).
+- [ ] **Google Identity Brokering** cho buyer.
+- [ ] **Keycloak Event Listener SPI** — đồng bộ user create/update/delete sang `user_profile` cache.
+- [ ] **Back-channel logout** — Single Logout đúng chuẩn.
+- [ ] **FreeIPA / Samba AD-DC + LDAP federation** — domain control cho thiết bị (downstream).
+- [ ] Tách DB seller-workspace ra riêng + sync qua event.
