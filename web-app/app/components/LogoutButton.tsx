@@ -15,9 +15,10 @@ export default function LogoutButton({ idToken }: LogoutButtonProps) {
       setIsLoading(true);
 
       // Fully terminate SSO session at Keycloak and then return to homepage.
-      if (idToken && process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER) {
+      const keycloakIssuer = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER || "http://localhost:8080/realms/ecommerce-realm";
+      if (idToken) {
         const keycloakLogoutUrl = new URL(
-          `${process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER}/protocol/openid-connect/logout`
+          `${keycloakIssuer}/protocol/openid-connect/logout`
         );
         keycloakLogoutUrl.searchParams.set("id_token_hint", idToken);
         keycloakLogoutUrl.searchParams.set("client_id", "nextjs-app");

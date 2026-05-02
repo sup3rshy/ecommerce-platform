@@ -59,6 +59,11 @@ export default async function AdminStoresPage() {
                   <form
                     action={async () => {
                       "use server";
+                      const { getServerSession: gss } = await import("next-auth");
+                      const { authOptions: ao } = await import("../../api/auth/[...nextauth]/route");
+                      const s = await gss(ao);
+                      if (!s?.user?.id || !s.user.roles?.includes("admin")) return;
+
                       const ownedProducts = await db
                         .select({ id: products.id })
                         .from(products)
@@ -111,6 +116,10 @@ export default async function AdminStoresPage() {
                         <form
                           action={async () => {
                             "use server";
+                            const { getServerSession: gss } = await import("next-auth");
+                            const { authOptions: ao } = await import("../../api/auth/[...nextauth]/route");
+                            const s = await gss(ao);
+                            if (!s?.user?.id || !s.user.roles?.includes("admin")) return;
 
                             await db.transaction(async (tx) => {
                               await tx.delete(cartItems).where(eq(cartItems.productId, product.id));

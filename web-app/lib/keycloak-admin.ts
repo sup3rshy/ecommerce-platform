@@ -62,6 +62,7 @@ function getKeycloakAdminConfig(): KeycloakAdminConfig {
 }
 
 async function getAdminAccessToken(config: KeycloakAdminConfig): Promise<string> {
+  // Try client_credentials first (requires Service Accounts on the client)
   const tokenEndpoint = `${config.serverUrl}/realms/${config.realm}/protocol/openid-connect/token`;
   const body = new URLSearchParams({
     grant_type: "client_credentials",
@@ -71,20 +72,50 @@ async function getAdminAccessToken(config: KeycloakAdminConfig): Promise<string>
 
   const response = await fetch(tokenEndpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
     cache: "no-store",
   });
 
   const payload = (await response.json().catch(() => null)) as { access_token?: string } | null;
 
-  if (!response.ok || !payload?.access_token) {
-    throw new Error("Cannot obtain Keycloak admin access token.");
+  if (response.ok && payload?.access_token) {
+    return payload.access_token;
   }
 
-  return payload.access_token;
+  // Fallback: use master realm admin credentials (KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD)
+  const adminUser = process.env.KEYCLOAK_ADMIN;
+  const adminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD;
+
+  if (!adminUser || !adminPassword) {
+    throw new Error(
+      "Cannot obtain Keycloak admin access token. " +
+      "Either enable Service Accounts on the client, or set KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD."
+    );
+  }
+
+  const masterTokenEndpoint = `${config.serverUrl}/realms/master/protocol/openid-connect/token`;
+  const masterBody = new URLSearchParams({
+    grant_type: "password",
+    client_id: "admin-cli",
+    username: adminUser,
+    password: adminPassword,
+  });
+
+  const masterResponse = await fetch(masterTokenEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: masterBody,
+    cache: "no-store",
+  });
+
+  const masterPayload = (await masterResponse.json().catch(() => null)) as { access_token?: string } | null;
+
+  if (!masterResponse.ok || !masterPayload?.access_token) {
+    throw new Error("Cannot obtain Keycloak admin access token via master realm.");
+  }
+
+  return masterPayload.access_token;
 }
 
 async function getRealmUsers(

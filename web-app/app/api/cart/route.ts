@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "../auth/[...nextauth]/route";
 import { db } from "../../../db";
-import { cartItems, products } from "../../../db/schema";
+import { cartItems, products, stores } from "../../../db/schema";
 
 type BuyerSession = {
   userId: string;
@@ -75,9 +75,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Số lượng không hợp lệ." }, { status: 400 });
   }
 
-  const product = await db.select({ id: products.id }).from(products).where(eq(products.id, productId));
-  if (product.length === 0) {
+  const productRows = await db
+    .select({ id: products.id, stock: products.stock, storeId: products.storeId })
+    .from(products)
+    .where(eq(products.id, productId));
+
+  if (productRows.length === 0) {
     return NextResponse.json({ error: "Không tìm thấy sản phẩm." }, { status: 404 });
+  }
+
+  const product = productRows;
+
+  // Không cho seller mua sản phẩm của chính mình
+  const ownStore = await db
+    .select({ id: stores.id })
+    .from(stores)
+    .where(and(eq(stores.ownerId, auth.userId), eq(stores.id, productRows[0].storeId)))
+    .limit(1);
+
+  if (ownStore.length > 0) {
+    return NextResponse.json({ error: "Bạn không thể mua sản phẩm của chính mình." }, { status: 403 });
   }
 
   const existing = await db
@@ -85,10 +102,15 @@ export async function POST(req: Request) {
     .from(cartItems)
     .where(and(eq(cartItems.userId, auth.userId), eq(cartItems.productId, productId)));
 
+  const newQuantity = (existing[0]?.quantity ?? 0) + quantity;
+  if (newQuantity > product[0].stock) {
+    return NextResponse.json({ error: `Tồn kho không đủ (còn ${product[0].stock}).` }, { status: 409 });
+  }
+
   if (existing.length > 0) {
     await db
       .update(cartItems)
-      .set({ quantity: existing[0].quantity + quantity })
+      .set({ quantity: newQuantity })
       .where(eq(cartItems.id, existing[0].id));
   } else {
     await db.insert(cartItems).values({ userId: auth.userId, productId, quantity });
@@ -114,12 +136,21 @@ export async function PATCH(req: Request) {
   }
 
   const current = await db
-    .select({ id: cartItems.id })
+    .select({ id: cartItems.id, productId: cartItems.productId })
     .from(cartItems)
     .where(and(eq(cartItems.id, itemId), eq(cartItems.userId, auth.userId)));
 
   if (current.length === 0) {
     return NextResponse.json({ error: "Không tìm thấy mục giỏ hàng." }, { status: 404 });
+  }
+
+  const product = await db
+    .select({ stock: products.stock })
+    .from(products)
+    .where(eq(products.id, current[0].productId));
+
+  if (product.length > 0 && quantity > product[0].stock) {
+    return NextResponse.json({ error: `Tồn kho không đủ (còn ${product[0].stock}).` }, { status: 409 });
   }
 
   await db.update(cartItems).set({ quantity }).where(eq(cartItems.id, itemId));

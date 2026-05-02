@@ -14,13 +14,14 @@ type StoreProduct = {
   name: string;
   description: string | null;
   price: number;
+  stock: number;
   imageUrl: string | null;
 };
 
-type OrderStatus = "pending" | "shipping" | "completed" | "paid";
+type OrderStatus = "pending" | "shipping" | "completed";
 
 const toOrderStatus = (status: string | null): OrderStatus => {
-  if (status === "shipping" || status === "completed" || status === "paid") {
+  if (status === "shipping" || status === "completed") {
     return status;
   }
 
@@ -48,7 +49,8 @@ export default async function SellerDashboard() {
     id: number;
     buyerId: string;
     productName: string;
-    price: number;
+    quantity: number;
+    unitPrice: number;
     status: OrderStatus;
     createdAt: string;
   }> = [];
@@ -60,10 +62,11 @@ export default async function SellerDashboard() {
       .select({
         id: orders.id,
         buyerId: orders.userId,
+        quantity: orders.quantity,
+        unitPrice: orders.unitPrice,
         status: orders.status,
         createdAt: orders.createdAt,
         productName: products.name,
-        price: products.price,
       })
       .from(orders)
       .innerJoin(products, eq(orders.productId, products.id))
@@ -75,7 +78,8 @@ export default async function SellerDashboard() {
       id: order.id,
       buyerId: order.buyerId,
       productName: order.productName,
-      price: order.price,
+      quantity: order.quantity,
+      unitPrice: order.unitPrice,
       status: toOrderStatus(order.status),
       createdAt: order.createdAt ? new Date(order.createdAt).toLocaleString("vi-VN") : "Không rõ",
     }));
@@ -95,16 +99,28 @@ export default async function SellerDashboard() {
             <h3 className="mb-3 text-lg font-medium text-slate-900">Thêm sản phẩm mới</h3>
             <form className="flex max-w-md flex-col gap-3" action={async (formData) => {
               "use server";
+              const { getServerSession: gss } = await import("next-auth");
+              const { authOptions: ao } = await import("../api/auth/[...nextauth]/route");
+              const s = await gss(ao);
+              if (!s?.user?.id || !s.user.roles?.includes("seller")) return;
+
               const name = formData.get("name") as string;
               const price = Number(formData.get("price"));
               const description = formData.get("description") as string;
               const imageUrl = (formData.get("imageUrl") as string | null)?.trim() || null;
-              
+              const stock = Math.max(0, Math.floor(Number(formData.get("stock")) || 0));
+
               if (name && price > 0) {
+                // Verify store ownership
+                const myStore = await db.select({ id: stores.id }).from(stores)
+                  .where(and(eq(stores.id, userStore.id), eq(stores.ownerId, s.user.id))).limit(1);
+                if (myStore.length === 0) return;
+
                 await db.insert(products).values({
                   storeId: userStore.id,
                   name,
                   price,
+                  stock,
                   description,
                   imageUrl,
                 });
@@ -123,6 +139,14 @@ export default async function SellerDashboard() {
                 type="number"
                 name="price"
                 placeholder="Giá tiền"
+                className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
+                required
+              />
+              <input
+                type="number"
+                name="stock"
+                placeholder="Số lượng tồn kho"
+                min={0}
                 className="rounded-lg border border-blue-200 p-2 outline-none focus:border-blue-500"
                 required
               />
@@ -162,7 +186,8 @@ export default async function SellerDashboard() {
                       <div className="space-y-2">
                         <p className="font-semibold text-slate-900">{product.name}</p>
                         <p className="text-sm text-gray-600">{product.description || "Sản phẩm chưa có mô tả."}</p>
-                        <p className="font-bold text-blue-600">{product.price} VNĐ</p>
+                        <p className="font-bold text-blue-600">{product.price.toLocaleString("vi-VN")} VNĐ</p>
+                        <p className="text-sm text-gray-600">Tồn kho: {product.stock}</p>
 
                         <details className="rounded-lg border border-blue-100 bg-white/80 p-2">
                           <summary className="cursor-pointer list-none rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100">
@@ -173,21 +198,33 @@ export default async function SellerDashboard() {
                             className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2"
                             action={async (formData) => {
                               "use server";
+                              const { getServerSession: gss } = await import("next-auth");
+                              const { authOptions: ao } = await import("../api/auth/[...nextauth]/route");
+                              const s = await gss(ao);
+                              if (!s?.user?.id || !s.user.roles?.includes("seller")) return;
+
                               const productId = Number(formData.get("productId"));
                               const nextName = (formData.get("name") as string | null)?.trim() || "";
                               const nextPrice = Number(formData.get("price"));
                               const nextDescription = (formData.get("description") as string | null)?.trim() || null;
                               const nextImageUrl = (formData.get("imageUrl") as string | null)?.trim() || null;
+                              const nextStock = Math.max(0, Math.floor(Number(formData.get("stock")) || 0));
 
                               if (!Number.isInteger(productId) || productId <= 0 || !nextName || nextPrice <= 0) {
                                 return;
                               }
+
+                              // Verify store ownership
+                              const myStore = await db.select({ id: stores.id }).from(stores)
+                                .where(and(eq(stores.id, userStore.id), eq(stores.ownerId, s.user.id))).limit(1);
+                              if (myStore.length === 0) return;
 
                               await db
                                 .update(products)
                                 .set({
                                   name: nextName,
                                   price: nextPrice,
+                                  stock: nextStock,
                                   description: nextDescription,
                                   imageUrl: nextImageUrl,
                                 })
@@ -209,6 +246,15 @@ export default async function SellerDashboard() {
                               type="number"
                               min={1}
                               defaultValue={product.price}
+                              className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500"
+                              required
+                            />
+                            <input
+                              name="stock"
+                              type="number"
+                              min={0}
+                              defaultValue={product.stock}
+                              placeholder="Tồn kho"
                               className="rounded-lg border border-blue-200 p-2 text-sm outline-none focus:border-blue-500"
                               required
                             />
@@ -240,6 +286,11 @@ export default async function SellerDashboard() {
                           <form
                             action={async (formData) => {
                               "use server";
+                              const { getServerSession: gss } = await import("next-auth");
+                              const { authOptions: ao } = await import("../api/auth/[...nextauth]/route");
+                              const s = await gss(ao);
+                              if (!s?.user?.id || !s.user.roles?.includes("seller")) return;
+
                               const productId = Number(formData.get("productId"));
 
                               if (!Number.isInteger(productId) || productId <= 0) {
@@ -267,6 +318,11 @@ export default async function SellerDashboard() {
                           <form
                             action={async (formData) => {
                               "use server";
+                              const { getServerSession: gss } = await import("next-auth");
+                              const { authOptions: ao } = await import("../api/auth/[...nextauth]/route");
+                              const s = await gss(ao);
+                              if (!s?.user?.id || !s.user.roles?.includes("seller")) return;
+
                               const productId = Number(formData.get("productId"));
 
                               if (!Number.isInteger(productId) || productId <= 0) {
@@ -310,13 +366,19 @@ export default async function SellerDashboard() {
           <p className="mb-4 text-slate-700">Bạn chưa thiết lập gian hàng nào.</p>
           <form className="flex gap-2" action={async (formData) => {
             "use server";
+            const { getServerSession: gss } = await import("next-auth");
+            const { authOptions: ao } = await import("../api/auth/[...nextauth]/route");
+            const { redirect: redir } = await import("next/navigation");
+            const s = await gss(ao);
+            if (!s?.user?.id || !s.user.roles?.includes("seller")) return;
+
             const storeName = formData.get("name") as string;
-            if (storeName && session.user.id) {
+            if (storeName) {
               await db.insert(stores).values({
-                ownerId: session.user.id,
+                ownerId: s.user.id,
                 name: storeName,
               });
-              redirect("/seller");
+              redir("/seller");
             }
           }}>
             <input 

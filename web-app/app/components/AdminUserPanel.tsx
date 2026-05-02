@@ -60,6 +60,35 @@ export default function AdminUserPanel({ initialUsers, initialPendingRequests }:
     }
   };
 
+  const rejectRequest = async (requestId: number) => {
+    const reason = prompt("Lý do từ chối (không bắt buộc):");
+    if (reason === null) return;
+
+    setRequestError(null);
+    setProcessingRequestId(requestId);
+
+    try {
+      const response = await fetch(`/api/admin/seller-requests/${requestId}/reject`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason || undefined }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setRequestError(payload?.error ?? "Không thể từ chối yêu cầu.");
+        return;
+      }
+
+      setPendingRequests((prev) => prev.filter((item) => item.id !== requestId));
+    } catch {
+      setRequestError("Đã có lỗi xảy ra khi gửi yêu cầu từ chối.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-blue-100 bg-blue-50/40 p-4">
@@ -85,14 +114,24 @@ export default function AdminUserPanel({ initialUsers, initialPendingRequests }:
                       <p className="text-sm text-slate-700">Gian hàng đăng ký: {request.storeName}</p>
                       <p className="text-xs text-slate-500">Thời gian gửi: {request.requestedAt}</p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={isProcessing}
-                      onClick={() => void approveRequest(request.id)}
-                      className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
-                    >
-                      {isProcessing ? "Đang duyệt..." : "Phê duyệt"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => void approveRequest(request.id)}
+                        className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
+                      >
+                        {isProcessing ? "Đang xử lý..." : "Phê duyệt"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => void rejectRequest(request.id)}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:bg-red-50/50"
+                      >
+                        Từ chối
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

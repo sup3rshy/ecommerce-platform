@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 
-type OrderStatus = "pending" | "shipping" | "completed" | "paid";
+type OrderStatus = "pending" | "shipping" | "completed";
 
 type SellerOrder = {
   id: number;
   buyerId: string;
   productName: string;
-  price: number;
+  quantity: number;
+  unitPrice: number;
   status: OrderStatus;
   createdAt: string;
 };
@@ -27,7 +28,12 @@ const statusLabelMap: Record<OrderStatus, string> = {
   pending: "Chờ xử lý",
   shipping: "Đang giao hàng",
   completed: "Đã hoàn thành",
-  paid: "Đã thanh toán",
+};
+
+const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  pending: ["shipping"],
+  shipping: ["completed"],
+  completed: [],
 };
 
 export default function SellerOrdersPanel({ initialOrders }: SellerOrdersPanelProps) {
@@ -85,28 +91,37 @@ export default function SellerOrdersPanel({ initialOrders }: SellerOrdersPanelPr
               <div className="space-y-1">
                 <p className="font-semibold text-slate-900">Đơn #{order.id}</p>
                 <p className="text-sm text-gray-700">Sản phẩm: {order.productName}</p>
-                <p className="text-sm text-gray-700">Giá: {order.price} VNĐ</p>
+                <p className="text-sm text-gray-700">Số lượng: {order.quantity}</p>
+                <p className="text-sm text-gray-700">Đơn giá: {order.unitPrice.toLocaleString("vi-VN")} VNĐ</p>
+                <p className="text-sm font-medium text-gray-700">Tổng: {(order.unitPrice * order.quantity).toLocaleString("vi-VN")} VNĐ</p>
                 <p className="text-sm text-gray-600">Người mua: {order.buyerId}</p>
                 <p className="text-sm text-gray-600">Thời gian đặt: {order.createdAt}</p>
               </div>
 
               <div className="min-w-52">
                 <p className="mb-1 text-sm text-gray-600">Trạng thái hiện tại: {statusLabelMap[order.status]}</p>
-                <select
-                  value={order.status === "paid" ? "pending" : order.status}
-                  onChange={(event) => {
-                    const value = event.target.value as OrderStatus;
-                    void updateOrderStatus(order.id, value);
-                  }}
-                  disabled={isUpdating}
-                  className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 outline-none focus:border-blue-500 disabled:bg-slate-100"
-                >
-                  {STATUS_OPTIONS.map((status) => (
-                    <option key={status.value} value={status.value}>
-                      {status.label}
-                    </option>
-                  ))}
-                </select>
+                {VALID_TRANSITIONS[order.status].length > 0 ? (
+                  <select
+                    value={order.status}
+                    onChange={(event) => {
+                      const value = event.target.value as OrderStatus;
+                      if (value !== order.status) {
+                        void updateOrderStatus(order.id, value);
+                      }
+                    }}
+                    disabled={isUpdating}
+                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 outline-none focus:border-blue-500 disabled:bg-slate-100"
+                  >
+                    <option value={order.status}>{statusLabelMap[order.status]}</option>
+                    {VALID_TRANSITIONS[order.status].map((nextStatus) => (
+                      <option key={nextStatus} value={nextStatus}>
+                        {statusLabelMap[nextStatus]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">Đã hoàn thành</p>
+                )}
               </div>
             </div>
           </div>
