@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f9ff;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-muted: #f8fbff;
+  --border: #dbeafe;
+  --primary: #2563eb;
+  --primary-strong: #1d4ed8;
+  --primary-soft: #e8f0ff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-noto-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1729;
+    --foreground: #e5efff;
+    --surface: #0f2138;
+    --surface-muted: #112946;
+    --border: #24456f;
+    --primary: #60a5fa;
+    --primary-strong: #93c5fd;
+    --primary-soft: #0f2c51;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-noto-sans), "Noto Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  scrollbar-color: #93c5fd transparent;
+}
+
+input,
+textarea,
+select {
+  color: #0f172a;
+  caret-color: #0f172a;
+}
+
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+  color: #334155;
+  font-style: italic;
+  opacity: 1;
+}
+
+label {
+  color: #0f172a;
+  font-style: italic;
+  font-weight: 600;
+}

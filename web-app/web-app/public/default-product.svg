@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Default product image">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#dbeafe" />
+      <stop offset="100%" stop-color="#bfdbfe" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="480" fill="url(#bg)" />
+  <g fill="#1d4ed8" opacity="0.9">
+    <rect x="190" y="140" width="260" height="200" rx="16" />
+    <circle cx="260" cy="215" r="28" fill="#93c5fd" />
+    <path d="M228 306l66-70 44 46 30-30 44 54z" fill="#93c5fd" />
+  </g>
+  <text x="50%" y="88%" text-anchor="middle" font-size="28" font-family="Arial, sans-serif" fill="#1e3a8a">
+    Hinh anh mac dinh
+  </text>
+</svg>

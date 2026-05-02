@@ -11,8 +11,7 @@ export const authOptions: NextAuthOptions = {
         id_token_signed_response_alg: "ES256",
         userinfo_signed_response_alg: "ES256",
       },
-      // Bỏ prompt:"login" để silent SSO hoạt động — Keycloak sẽ
-      // tự nhận diện session đã có và bỏ qua màn hình đăng nhập.
+      // Bỏ prompt:"login" để silent SSO hoạt động.
       profile(profile) {
         return {
           id: profile.sub,
@@ -20,39 +19,40 @@ export const authOptions: NextAuthOptions = {
           email: profile.email,
           image: profile.picture,
           roles: profile.realm_access?.roles ?? [],
+          groups: (profile as { groups?: string[] }).groups ?? [],
         };
       },
     }),
   ],
   cookies: {
     sessionToken: {
-      name: "ecommerce.session-token",
+      name: "seller-workspace.session-token",
       options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
     },
     callbackUrl: {
-      name: "ecommerce.callback-url",
+      name: "seller-workspace.callback-url",
       options: { sameSite: "lax", path: "/", secure: false },
     },
     csrfToken: {
-      name: "ecommerce.csrf-token",
+      name: "seller-workspace.csrf-token",
       options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
     },
   },
   callbacks: {
     async jwt({ token, user, account }) {
-      if (account) {
-        token.idToken = account.id_token;
-      }
+      if (account) token.idToken = account.id_token;
       if (user) {
-        token.roles = user.roles;
         token.id = user.id;
+        token.roles = user.roles;
+        token.groups = user.groups;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.roles = token.roles;
         session.user.id = token.id;
+        session.user.roles = token.roles;
+        session.user.groups = token.groups;
       }
       session.idToken = token.idToken;
       return session;
@@ -65,20 +65,13 @@ export const authOptions: NextAuthOptions = {
     async signOut({ token }) {
       if (token.idToken && process.env.KEYCLOAK_ISSUER) {
         try {
-          const keycloakUrl = new URL(
+          const url = new URL(
             `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/logout`
           );
-          keycloakUrl.searchParams.set("id_token_hint", token.idToken as string);
-          
-          // Gọi Keycloak logout endpoint để invalidate session
-          await fetch(keycloakUrl.toString(), {
-            method: "GET",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          }).catch(() => {
-            // Ignore errors from Keycloak logout
-          });
-        } catch (error) {
-          console.error("Error logging out from Keycloak:", error);
+          url.searchParams.set("id_token_hint", token.idToken as string);
+          await fetch(url.toString(), { method: "GET" }).catch(() => {});
+        } catch (err) {
+          console.error("Keycloak logout error:", err);
         }
       }
     },

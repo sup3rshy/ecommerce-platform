@@ -1,5 +1,38 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import KeycloakProvider from "next-auth/providers/keycloak";
+import { JWT } from "next-auth/jwt";
+
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  try {
+    const response = await fetch(
+      `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: process.env.KEYCLOAK_CLIENT_ID!,
+          client_secret: process.env.KEYCLOAK_CLIENT_SECRET!,
+          refresh_token: token.refreshToken as string,
+        }),
+      }
+    );
+
+    const refreshed = await response.json();
+    if (!response.ok) throw refreshed;
+
+    return {
+      ...token,
+      accessToken: refreshed.access_token,
+      refreshToken: refreshed.refresh_token ?? token.refreshToken,
+      idToken: refreshed.id_token,
+      accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
+    };
+  } catch (error) {
+    console.error("Error refreshing access token:", error);
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -11,8 +44,7 @@ export const authOptions: NextAuthOptions = {
         id_token_signed_response_alg: "ES256",
         userinfo_signed_response_alg: "ES256",
       },
-      // Bỏ prompt:"login" để silent SSO hoạt động — Keycloak sẽ
-      // tự nhận diện session đã có và bỏ qua màn hình đăng nhập.
+      authorization: { params: { prompt: "login" } },
       profile(profile) {
         return {
           id: profile.sub,
@@ -24,30 +56,27 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
-  cookies: {
-    sessionToken: {
-      name: "ecommerce.session-token",
-      options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
-    },
-    callbackUrl: {
-      name: "ecommerce.callback-url",
-      options: { sameSite: "lax", path: "/", secure: false },
-    },
-    csrfToken: {
-      name: "ecommerce.csrf-token",
-      options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
-    },
-  },
   callbacks: {
     async jwt({ token, user, account }) {
+      // Initial login — store all tokens
       if (account) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
         token.idToken = account.id_token;
+        token.accessTokenExpires = (account.expires_at ?? 0) * 1000;
       }
       if (user) {
         token.roles = user.roles;
         token.id = user.id;
       }
-      return token;
+
+      // Token still valid
+      if (Date.now() < (token.accessTokenExpires ?? 0)) {
+        return token;
+      }
+
+      // Token expired — attempt refresh
+      return refreshAccessToken(token);
     },
     async session({ session, token }) {
       if (session.user) {
@@ -55,6 +84,9 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id;
       }
       session.idToken = token.idToken;
+      if (token.error) {
+        session.error = token.error;
+      }
       return session;
     },
     async redirect({ baseUrl }) {
