@@ -12,18 +12,18 @@
 
 ## 2. Cấu hình Keycloak realm
 
-- [~] Thêm clients mới vào realm: ✅ `seller-workspace` xong; ⏳ `shoppay-app`, (optional) `shopfood-app`.
-- [~] Thêm role realm: ✅ `staff-warehouse`, `staff-cs`, `staff-finance` xong; ⏳ `wallet-user`, `kyc-verified`, `restaurant-owner`, `rider`.
+- [~] Thêm clients mới vào realm: ✅ `seller-workspace`, ✅ `shoppay-app`; ⏳ (optional) `shopfood-app`.
+- [~] Thêm role realm: ✅ `staff-warehouse`, `staff-cs`, `staff-finance`, `wallet-user`, `kyc-verified`; ⏳ `restaurant-owner`, `rider`.
 - [ ] Cấu hình **Identity Brokering** với Google IdP (cho ecommerce + ShopFood).
 - [ ] Cấu hình **SAML 2.0 IdP** mẫu (mock Azure AD/Okta bằng `samltest.id` hoặc 1 Keycloak realm khác làm IdP) cho Seller Workspace — minh hoạ "Employer SSO".
-- [ ] Bật **MFA (TOTP)** bắt buộc riêng cho client `shoppay-app` qua Authentication Flow tuỳ biến.
+- [~] Bật **MFA (TOTP)**: ✅ user `wallet1` có required action `CONFIGURE_TOTP` (forced setup ở login đầu); ⏳ enforce qua Authentication Flow để áp dụng cho mọi user của client `shoppay-app`.
 - [x] Tạo **Keycloak Groups**: đã có `store-demo-1` với 3 sub-group warehouse/cs/finance + 3 user mẫu.
 - [ ] Thêm **IdentityProviderMapper**: claim `email_verified=true` của Google → tự gán role `food-buyer`.
 
 ## 3. App code & đồng bộ user
 
 - [ ] Tạo bảng `user_profile` ở app DB (cache `sub`, email, name, roles) để tránh gọi Keycloak Admin API mỗi request.
-- [ ] Scaffold Next.js app **ShopPay** (client OIDC `shoppay-app`, schema `wallets`, `transactions`, `kyc_documents`).
+- [x] Scaffold Next.js app **ShopPay** (client OIDC `shoppay-app`, schema `wallets`, `transactions`, `kyc_documents`) → [shoppay/](shoppay).
 - [x] Scaffold Next.js app **Seller Workspace** (schema `staff_invitations`, `store_permissions`, `audit_logs`) → [seller-workspace/](seller-workspace).
 - [ ] Cài **Keycloak Event Listener SPI** để đồng bộ user (create/update/delete) sang `user_profile` của các app.
 

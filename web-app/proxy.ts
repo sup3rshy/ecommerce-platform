@@ -1,42 +1,51 @@
-import { withAuth } from "next-auth/middleware";
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export default withAuth(
-  function middleware(req) {
-    const token = req.nextauth.token;
-    const path = req.nextUrl.pathname;
-    const isApi = path.startsWith("/api/");
+export default async function proxy(req: NextRequest) {
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+    cookieName: "ecommerce.session-token",
+  });
 
-    // Seller routes — cho phép /seller/register với buyer
-    const isSellerRegistrationPath =
-      path === "/seller/register" || path === "/api/seller/register";
+  const path = req.nextUrl.pathname;
+  const isApi = path.startsWith("/api/");
 
-    if (
-      (path.startsWith("/seller") || path.startsWith("/api/seller")) &&
-      !isSellerRegistrationPath &&
-      !token?.roles?.includes("seller")
-    ) {
-      return isApi
-        ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
-        : NextResponse.redirect(new URL("/", req.url));
+  if (!token) {
+    if (isApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // Admin routes
-    if (
-      (path.startsWith("/admin") || path.startsWith("/api/admin")) &&
-      !token?.roles?.includes("admin")
-    ) {
-      return isApi
-        ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
-        : NextResponse.redirect(new URL("/", req.url));
-    }
-  },
-  {
-    callbacks: {
-      authorized: ({ token }) => !!token,
-    },
+    const signInUrl = new URL("/api/auth/signin", req.url);
+    signInUrl.searchParams.set("callbackUrl", path);
+    return NextResponse.redirect(signInUrl);
   }
-);
+
+  const roles = (token.roles ?? []) as string[];
+
+  // Seller routes — cho phép /seller/register với buyer
+  const isSellerRegistrationPath =
+    path === "/seller/register" || path === "/api/seller/register";
+
+  if (
+    (path.startsWith("/seller") || path.startsWith("/api/seller")) &&
+    !isSellerRegistrationPath &&
+    !roles.includes("seller")
+  ) {
+    return isApi
+      ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      : NextResponse.redirect(new URL("/", req.url));
+  }
+
+  // Admin routes
+  if (
+    (path.startsWith("/admin") || path.startsWith("/api/admin")) &&
+    !roles.includes("admin")
+  ) {
+    return isApi
+      ? NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      : NextResponse.redirect(new URL("/", req.url));
+  }
+}
 
 export const config = {
   matcher: [

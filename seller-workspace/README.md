@@ -22,12 +22,12 @@ Yêu cầu Keycloak + Postgres đã chạy sẵn (`docker compose up` ở repo r
 
 ## User mẫu để test
 
-| Username     | Password | Role             | Group                       |
-|--------------|----------|------------------|-----------------------------|
-| seller1      | 123456   | seller           | -                           |
-| warehouse1   | 123456   | staff-warehouse  | /store-demo-1/warehouse     |
-| cs1          | 123456   | staff-cs         | /store-demo-1/cs            |
-| finance1     | 123456   | staff-finance    | /store-demo-1/finance       |
+| Username     | Password          | Role             | Group                       |
+|--------------|-------------------|------------------|-----------------------------|
+| seller1      | Seller1@2024      | seller           | -                           |
+| warehouse1   | Warehouse1@2024   | staff-warehouse  | /store-demo-1/warehouse     |
+| cs1          | Cs1@2024          | staff-cs         | /store-demo-1/cs            |
+| finance1     | Finance1@2024     | staff-finance    | /store-demo-1/finance       |
 
 ## Cấu trúc
 
