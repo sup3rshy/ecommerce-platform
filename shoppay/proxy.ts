@@ -1,6 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+// Mọi user login đều có ví. Một số action nâng cao (giao dịch lớn) cần kyc-verified.
+// Ở proxy chỉ enforce authenticated; per-action check role làm trong server actions.
+
 export default async function proxy(req: NextRequest) {
   const token = await getToken({
     req,

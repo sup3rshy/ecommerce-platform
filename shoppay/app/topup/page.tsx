@@ -6,6 +6,8 @@ import { topUp, getOrCreateWallet, formatVND } from "@/lib/wallet";
 
 const PRESETS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
+const HIGH_VALUE_THRESHOLD = 5_000_000;
+
 async function doTopUp(formData: FormData) {
   "use server";
   const session = await getServerSession(authOptions);
@@ -14,6 +16,14 @@ async function doTopUp(formData: FormData) {
   const amount = Number(formData.get("amount"));
   if (!amount || amount <= 0) return;
   if (amount > 50_000_000) throw new Error("amount too large");
+
+  // AuthZ: giao dịch > 5 triệu cần kyc-verified
+  const roles = (session.user.roles ?? []) as string[];
+  if (amount > HIGH_VALUE_THRESHOLD && !roles.includes("kyc-verified")) {
+    throw new Error(
+      `Giao dịch trên ${HIGH_VALUE_THRESHOLD.toLocaleString("vi-VN")} VND yêu cầu KYC. Vào /kyc để xác minh.`
+    );
+  }
 
   await topUp({
     userId: session.user.id,

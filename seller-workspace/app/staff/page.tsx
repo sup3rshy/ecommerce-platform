@@ -15,6 +15,12 @@ async function inviteStaff(formData: FormData) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error("unauthenticated");
 
+  // AuthZ: chỉ seller (chủ shop) hoặc admin được mời nhân viên
+  const roles = (session.user.roles ?? []) as string[];
+  if (!roles.includes("seller") && !roles.includes("admin")) {
+    throw new Error("Forbidden: chỉ chủ shop hoặc admin được mời nhân viên");
+  }
+
   const email = String(formData.get("email") ?? "").trim();
   const role = String(formData.get("role") ?? "");
   if (!email || !STAFF_ROLES.includes(role as (typeof STAFF_ROLES)[number])) {
@@ -46,6 +52,11 @@ async function revokeStaff(formData: FormData) {
   "use server";
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error("unauthenticated");
+
+  const roles = (session.user.roles ?? []) as string[];
+  if (!roles.includes("seller") && !roles.includes("admin")) {
+    throw new Error("Forbidden: chỉ chủ shop hoặc admin được thu hồi");
+  }
 
   const id = Number(formData.get("id"));
   if (!id) return;
