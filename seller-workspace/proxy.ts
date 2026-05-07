@@ -18,7 +18,10 @@ export default async function proxy(req: NextRequest) {
 
   if (!token) {
     const signInUrl = new URL("/api/auth/signin", req.url);
-    signInUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    signInUrl.searchParams.set(
+      "callbackUrl",
+      req.nextUrl.pathname + req.nextUrl.search
+    );
     return NextResponse.redirect(signInUrl);
   }
 
@@ -29,6 +32,11 @@ export default async function proxy(req: NextRequest) {
   }
 }
 
+// Chặn toàn bộ :3100 trừ:
+//   - /denied (page hiện thông báo)
+//   - /api/auth/* (NextAuth flow cần unauthenticated access)
+//   - /_next/* (static assets, font, image)
+//   - /favicon.ico
 export const config = {
-  matcher: ["/dashboard/:path*", "/staff/:path*", "/audit/:path*"],
+  matcher: ["/((?!denied|api/auth|_next|favicon.ico).*)"],
 };

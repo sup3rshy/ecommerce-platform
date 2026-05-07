@@ -1938,7 +1938,7 @@
       "internalId": "29b1a407-f6b1-4f25-adc9-8839dd5e4eae",
       "providerId": "google",
       "enabled": true,
-      "trustEmail": false,
+      "trustEmail": true,
       "storeToken": false,
       "linkOnly": false,
       "hideOnLogin": false,
@@ -2148,22 +2148,14 @@
     {
       "id": "6b5a8642-7a11-4e18-b163-498929bb0e2b",
       "alias": "browser-shoppay",
-      "description": "Custom browser flow for shoppay-app — username+password+TOTP REQUIRED. Nếu user chưa có TOTP, Keycloak tự prompt setup (userSetupAllowed=true).",
+      "description": "Custom browser flow for shoppay-app. KHÔNG dùng auth-cookie SSO — luôn buộc password+TOTP fresh mỗi lần vào ShopPay từ ngoài. Trong cùng session ShopPay, NextAuth cookie giữ user, không cần round-trip Keycloak nữa.",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
       "authenticationExecutions": [
         {
-          "authenticator": "auth-cookie",
-          "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
-          "priority": 10,
-          "autheticatorFlow": false,
-          "userSetupAllowed": false
-        },
-        {
           "authenticatorFlow": true,
-          "requirement": "ALTERNATIVE",
+          "requirement": "REQUIRED",
           "priority": 30,
           "autheticatorFlow": true,
           "flowAlias": "shoppay-forms",

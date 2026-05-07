@@ -25,6 +25,12 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getServerSession(authOptions);
 
+  // Chỉ user có role hợp lệ mới thấy nav (Dashboard / Nhân viên / Audit log).
+  // Buyer hoặc user không quyền thấy denied page hoàn toàn trống nav → không leak path.
+  const ALLOWED_ROLES = ["seller", "admin", "staff-warehouse", "staff-cs", "staff-finance"];
+  const userRoles = session?.user?.roles ?? [];
+  const hasWorkspaceAccess = userRoles.some((r) => ALLOWED_ROLES.includes(r));
+
   return (
     <html lang="vi" className={`${notoSans.variable} ${geistMono.variable}`}>
       <body>
@@ -33,7 +39,8 @@ export default async function RootLayout({
             <TopBar
               isAuthenticated={Boolean(session?.user?.id)}
               userName={session?.user?.name}
-              roles={session?.user?.roles ?? []}
+              roles={userRoles}
+              showNav={hasWorkspaceAccess}
             />
             <main className="card">{children}</main>
           </div>

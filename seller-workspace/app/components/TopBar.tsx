@@ -38,10 +38,12 @@ export function TopBar({
   isAuthenticated,
   userName,
   roles,
+  showNav = true,
 }: {
   isAuthenticated: boolean;
   userName?: string | null;
   roles: string[];
+  showNav?: boolean;
 }) {
   return (
     <header className="topbar">
@@ -49,7 +51,7 @@ export function TopBar({
         <Link href="/" className="brand">
           Seller Workspace
         </Link>
-        {isAuthenticated && (
+        {isAuthenticated && showNav && (
           <nav>
             <Link href="/dashboard">Dashboard</Link>
             <Link href="/staff">Nhân viên</Link>
