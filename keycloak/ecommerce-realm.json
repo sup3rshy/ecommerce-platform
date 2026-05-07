@@ -802,7 +802,7 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "**********",
+      "secret": "${BACKEND_ADMIN_CLIENT_SECRET}",
       "redirectUris": [
         "http://localhost:3000/*"
       ],
@@ -903,6 +903,7 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
+      "secret": "${NEXTJS_APP_CLIENT_SECRET}",
       "redirectUris": [
         "http://localhost:3000/api/auth/callback/keycloak",
         "http://localhost:8000/",
@@ -980,7 +981,7 @@
       "name": "Seller Workspace",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "seller-workspace-secret",
+      "secret": "${SELLER_WORKSPACE_CLIENT_SECRET}",
       "redirectUris": [
         "http://localhost:3100",
         "http://localhost:3100/",
@@ -1040,7 +1041,7 @@
       "name": "ShopPay (Wallet)",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "shoppay-secret",
+      "secret": "${SHOPPAY_CLIENT_SECRET}",
       "redirectUris": [
         "http://localhost:3200",
         "http://localhost:3200/",
@@ -1910,7 +1911,7 @@
     "envelopeFrom": "",
     "ssl": "true",
     "timeout": "10000",
-    "password": "hehe dont steal my secret",
+    "password": "${SMTP_PASSWORD}",
     "port": "465",
     "host": "smtp.gmail.com",
     "replyTo": "",

@@ -1,6 +1,6 @@
 # Ecommerce Platform — Multi-App SSO Demo
 
-Hệ sinh thái 3 app dùng chung 1 Keycloak làm IdP trung tâm — mô phỏng kiến trúc Shopee / ShopeeFood / ShopeePay.
+Hệ sinh thái 3 app dùng chung 1 Keycloak làm IdP — mô phỏng kiến trúc Shopee / ShopeeFood / ShopeePay.
 
 | App | Port | Vai trò |
 |---|---|---|
@@ -8,194 +8,214 @@ Hệ sinh thái 3 app dùng chung 1 Keycloak làm IdP trung tâm — mô phỏng
 | [seller-workspace/](seller-workspace) | 3100 | **back-office** — chủ shop + nhân viên (kho/CSKH/kế toán) |
 | [shoppay/](shoppay) | 3200 | **ví điện tử** — wallet + KYC, **bắt buộc MFA (TOTP)** |
 
-Cả 3 app login chung qua Keycloak realm `ecommerce-realm`. 1 lần đăng nhập → vào được mọi app (silent SSO).
+Cả 3 app login chung qua realm `ecommerce-realm`. 1 lần đăng nhập → vào được mọi app (silent SSO).
 
 ---
 
 ## Kiến trúc
 
 ```
-                       Browser
-                          │
-      ┌──────────┬────────┼────────┬──────────┐
-      ▼          ▼        ▼        ▼          ▼
-   :3000     :3100     :3200    :8080      :8000
-ecommerce  seller-ws  shoppay  Keycloak    Nginx
-                                (IdP)      (gateway)
-      │          │        │       │
-      └──────────┴────────┴───────┘
-                   │
-                   ▼
-            Postgres (5432)
-            ├── ecommerce         (stores, products, orders, cart)
-            ├── seller_workspace  (staff_invitations, store_permissions, audit_logs)
-            ├── shoppay           (wallets, transactions, kyc_documents)
-            └── keycloak          (Keycloak data)
+                     Browser
+                        │
+    ┌──────────┬────────┼────────┬──────────┐
+    ▼          ▼        ▼        ▼          ▼
+ :3000     :3100     :3200    :8080      :8000
+ecommerce seller-ws shoppay  Keycloak    Nginx
+
+                                │
+                                ▼
+                       Postgres (5432)
+                       ├── ecommerce
+                       ├── seller_workspace
+                       ├── shoppay
+                       └── keycloak
 ```
 
 | Stack | Version |
 |---|---|
 | Next.js | 16 (App Router, Turbopack) |
-| NextAuth | 4.24 (OIDC client) |
+| NextAuth | 4.24 |
 | Keycloak | latest |
 | Drizzle ORM | 0.45 |
 | PostgreSQL | 15 |
-| Node.js | **22 LTS** (Node 25 lỗi silent-exit với Next 16) |
+| Node.js | **22 LTS** |
 
 ---
 
-## Yêu cầu
+## Setup từ 0
 
-- Docker Desktop đang chạy
-- Node.js 22 LTS (khuyên dùng nvm)
-- npm
+Yêu cầu: Docker + Node.js 22 LTS. WSL/Linux/Mac đều OK.
 
-WSL OK. Lưu ý: chạy `npm install` và `npm run dev` **bên trong WSL**, không share `node_modules` với Windows.
-
----
-
-## Setup
-
-### 1. Start hạ tầng
+### 1. Clone + tạo `.env` ở root
 
 ```bash
-git clone <repo>
-cd ecommerce-platform
-docker compose up -d
-```
-
-Đợi ~30-60s để Keycloak import realm. Verify:
-
-```bash
-curl -s http://localhost:8080/realms/ecommerce-realm/.well-known/openid-configuration | head -c 100
-```
-
-Phải thấy JSON có `"issuer":"http://localhost:8080/realms/ecommerce-realm"`.
-
-### 2. Tạo databases
-
-```bash
-docker exec -i $(docker ps -qf "name=postgres") psql -U admin -d postgres \
-  -c "CREATE DATABASE ecommerce;" \
-  -c "CREATE DATABASE seller_workspace;" \
-  -c "CREATE DATABASE shoppay;"
-```
-
-> Mỗi `-c` chạy 1 transaction riêng. Gộp chung trong 1 chuỗi `-c "..."` sẽ lỗi `CREATE DATABASE cannot run inside a transaction block`.
-
-> Nếu permission denied: `sudo usermod -aG docker $USER` rồi logout/login WSL lại.
-
-### 3. Setup web-app (ecommerce)
-
-```bash
-cd web-app
-cp .env.example .env.local       # nếu có .env.example, không thì tạo thủ công (xem dưới)
-echo 'DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce' > .env
-npm install
-npx drizzle-kit push             # tạo bảng stores, products, orders, cart, ...
-npm run dev                      # http://localhost:3000
-```
-
-> File `.env` (1 dòng DATABASE_URL) chỉ phục vụ drizzle-kit. App runtime đọc `.env.local`.
-> drizzle-kit auto-load `.env` nhưng KHÔNG load `.env.local`.
-
-`.env.local` cho web-app:
-
-```env
-DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=my-super-secret-key-change-in-production
-KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm
-KEYCLOAK_CLIENT_ID=nextjs-app
-KEYCLOAK_CLIENT_SECRET=my-super-secret-key
-```
-
-### 4. Setup seller-workspace
-
-Mở **terminal mới** (giữ web-app chạy):
-
-```bash
-cd seller-workspace
+git clone <repo> && cd ecommerce-platform
 cp .env.example .env
-npm install
-npm run db:push                  # drizzle tự đọc .env
-npm run dev                      # http://localhost:3100
+
+# Sinh secret thật cho mọi biến
+node -e "['POSTGRES_PASSWORD','KEYCLOAK_ADMIN_PASSWORD','NEXTJS_APP_CLIENT_SECRET','SELLER_WORKSPACE_CLIENT_SECRET','SHOPPAY_CLIENT_SECRET','BACKEND_ADMIN_CLIENT_SECRET'].forEach(k=>console.log(k+'='+require('crypto').randomBytes(32).toString('hex')))"
+# → copy output, paste đè vào .env
 ```
 
-### 5. Setup shoppay
+> File `.env` này là **nguồn duy nhất** của Postgres password, Keycloak admin password, và 4 client secret. Đã có sẵn trong `.gitignore`.
 
-Mở **terminal mới**:
+### 2. Tạo `.env` cho 3 app
+
+Mỗi app cần `.env` riêng để Next.js đọc lúc runtime. Giá trị **phải khớp** với root `.env`.
 
 ```bash
-cd shoppay
-cp .env.example .env
-npm install
-npm run db:push
-npm run dev                      # http://localhost:3200
+for d in web-app seller-workspace shoppay; do
+  cp $d/.env.example $d/.env
+  echo "→ sửa $d/.env: thay CHANGEME-* bằng giá trị tương ứng từ root .env"
+done
 ```
 
-### 6. Truy cập
+Cụ thể trong từng app `.env`:
+- `DATABASE_URL` → password phải = `POSTGRES_PASSWORD` ở root.
+- `KEYCLOAK_CLIENT_SECRET` → phải = `<APP>_CLIENT_SECRET` ở root (web-app dùng `NEXTJS_APP_CLIENT_SECRET`).
+- `NEXTAUTH_SECRET` → sinh riêng bằng `openssl rand -hex 32` hoặc `node -e ...`.
 
-| URL | Mục đích |
-|---|---|
-| http://localhost:3000 | ecommerce |
-| http://localhost:3100 | seller-workspace |
-| http://localhost:3200 | shoppay |
-| http://localhost:8080 | Keycloak Admin (admin/admin) |
-| http://localhost:8000 | Nginx gateway |
+### 3. Bootstrap hạ tầng + DB + schema
+
+```bash
+npm install               # cài concurrently ở root
+bash scripts/reset.sh
+```
+
+Script này:
+- Wipe Postgres volume cũ (nếu có) → up lại Keycloak với secret mới
+- Đợi Keycloak ready
+- Tạo 3 DB `ecommerce` / `seller_workspace` / `shoppay`
+- Push Drizzle schema cho cả 3 app
+
+### 4. Chạy 3 app cùng lúc
+
+```bash
+npm run dev
+```
+
+3 app cùng start, log có prefix màu `[web]` `[seller]` `[pay]`. `Ctrl+C` 1 lần kill cả 3.
 
 ---
 
-## Tài khoản demo
+## Tài khoản
 
-Realm bật password policy: `length(8) and digits(1) and upperCase(1) and lowerCase(1) and specialChars(1)`.
+### Keycloak Admin Console — http://localhost:8080
 
-| Username | Password | Role | Ghi chú |
+Username/password đọc từ root `.env`:
+
+```bash
+grep -E '^KEYCLOAK_ADMIN' .env
+```
+
+(Mặc định cũ `admin/admin` đã bỏ — secret giờ là 32-byte random.)
+
+### User demo trong realm `ecommerce-realm`
+
+Password policy: `length(8) and digits(1) and upperCase(1) and lowerCase(1) and specialChars(1)`.
+
+| Username | Password | Role | Dùng cho |
 |---|---|---|---|
 | `buyer1` | `Buyer1@2024` | buyer | Mua hàng ở ecommerce |
 | `seller1` | `Seller1@2024` | seller | Bán hàng + vào seller-workspace |
 | `admin1` | `Admin1@2024` | admin | Duyệt seller request |
-| `warehouse1` | `Warehouse1@2024` | staff-warehouse | Nhân viên kho |
+| `warehouse1` | `Warehouse1@2024` | staff-warehouse | Nhân viên kho (group `/store-demo-1/warehouse`) |
 | `cs1` | `Cs1@2024` | staff-cs | Nhân viên CSKH |
 | `finance1` | `Finance1@2024` | staff-finance | Nhân viên tài chính |
 | `wallet1` | `Wallet1@2024` | wallet-user | **Bắt buộc setup TOTP** ở login đầu |
 
 ---
 
-## Test SSO (5 kịch bản)
+## Test theo kịch bản
 
-### 1. Silent SSO cross-app
-1. Login `seller1` ở :3000.
-2. Mở tab mới → :3100 → "Đăng nhập SSO".
-3. **Kỳ vọng**: redirect qua Keycloak → quay về luôn, không hỏi password.
+> Mở 1 trình duyệt **incognito riêng cho mỗi kịch bản** (hoặc clear cookie giữa các lần) — vì SSO nhớ session, dễ "ngỡ là OK" do phiên cũ.
 
-Verify trong DevTools Network: request `/auth/realms/.../auth?...` trả 302 thẳng về callback, không qua trang login.
+### Kịch bản A — Smoke test (5 phút, làm trước tiên)
 
-### 2. Multi-staff per store
-1. Login `warehouse1` ở :3100 → `/dashboard`.
-2. Thấy `roles: staff-warehouse`, `groups: /store-demo-1/warehouse`.
-3. Logout → login `cs1` → role + group khác.
+Mục tiêu: chắc chắn 3 app + Keycloak alive, secret khớp đúng.
 
-→ Minh hoạ Keycloak Groups: cùng store, khác quyền.
+1. **Health check**:
+   ```bash
+   curl -s http://localhost:8080/realms/ecommerce-realm/.well-known/openid-configuration | head -c 80
+   curl -sI http://localhost:3000  # 200 hoặc 307 đều OK
+   curl -sI http://localhost:3100
+   curl -sI http://localhost:3200
+   ```
+2. Mở incognito → http://localhost:3000 → click "Đăng nhập" → Keycloak hỏi tài khoản → nhập `buyer1` / `Buyer1@2024` → quay về :3000 với header chào tên user.
+3. Logout → kết thúc.
 
-### 3. Server actions + audit log
-1. Login `seller1` ở :3100 → `/staff` → mời 1 email + role.
-2. Vào `/audit` → thấy log `staff.invite`.
+❌ Nếu thấy `invalid_client` → secret trong `web-app/.env` không khớp `NEXTJS_APP_CLIENT_SECRET` ở root `.env`. Sửa rồi `npm run dev` lại.
 
-### 4. MFA bắt buộc cho ShopPay
-1. Login `wallet1` / `Wallet1@2024` ở :3200.
+### Kịch bản B — Silent SSO cross-app
+
+Mục tiêu: chứng minh 1 lần login dùng cho cả 3 app.
+
+1. Trong incognito, login `seller1` ở http://localhost:3000.
+2. Mở **tab mới cùng cửa sổ** → http://localhost:3100 → click "Đăng nhập SSO".
+3. **Kỳ vọng**: redirect Keycloak rồi quay về luôn — KHÔNG hỏi password.
+
+Verify trong DevTools → Network: request `…/auth/realms/ecommerce-realm/protocol/openid-connect/auth?...` trả `302` thẳng về `/api/auth/callback/keycloak`, không qua trang login.
+
+### Kịch bản C — Phân quyền nhân viên (Keycloak Groups)
+
+Mục tiêu: cùng 1 store, 3 nhân viên có 3 quyền khác nhau.
+
+1. Login `warehouse1` ở :3100 → vào `/dashboard`. Page hiển thị `roles: ["staff-warehouse"]` và `groups: ["/store-demo-1/warehouse"]`.
+2. Logout → login `cs1` → role/group khác.
+3. Logout → login `finance1` → role/group khác.
+
+→ Cùng group cha `store-demo-1`, sub-group quyết định quyền.
+
+### Kịch bản D — Server actions + audit log
+
+Mục tiêu: action có authZ check + ghi audit.
+
+1. Login `seller1` ở :3100 (vì action `staff.invite` yêu cầu role `seller` hoặc `admin`).
+2. Vào `/staff` → nhập email + role staff → submit.
+3. Vào `/audit` → thấy entry mới với `action: "staff.invite"`, `actorId`, `metadata`.
+4. Logout, login `warehouse1` → vào `/staff` → thử mời → bị reject (action guard chặn ở server).
+
+### Kịch bản E — MFA bắt buộc cho ShopPay
+
+Mục tiêu: cùng 1 user pool nhưng app `shoppay-app` có policy bảo mật khác.
+
+1. Login `wallet1` / `Wallet1@2024` ở http://localhost:3200.
 2. Keycloak detect required action `CONFIGURE_TOTP` → bắt setup.
-3. Cài Google Authenticator / 1Password / ... → quét QR.
-4. Nhập 6 chữ số → confirm → redirect về ShopPay.
-5. Login lần kế: password + TOTP code mỗi lần.
+3. Cài Google Authenticator / 1Password / Authy → quét QR.
+4. Nhập 6 chữ số → confirm → redirect về :3200.
+5. Logout, login lại → bị hỏi TOTP code mỗi lần (không chỉ lần đầu).
+6. Login cùng `wallet1` ở :3000 (nếu wallet1 có role buyer) → vẫn cần TOTP do realm-level credential.
 
-→ Minh hoạ chính sách bảo mật khác nhau theo app dù cùng user pool.
+> Nếu muốn skip TOTP cho `wallet1` lúc dev: vào Keycloak Admin → Users → wallet1 → Required user actions → xoá `Configure OTP`.
 
-### 5. Single Logout (front-channel)
-1. Login ở cả 3 app.
-2. Logout ở 1 app → app còn lại reload → khi gọi token kế, Keycloak phát hiện session đã chết.
+### Kịch bản F — Topup ví + KYC gating
 
-> Back-channel logout chính thống cần config thêm — xem [todo.md](todo.md).
+Mục tiêu: action guard 2 layer (route guard + business rule).
+
+1. Login `wallet1` ở :3200 (sau khi xong TOTP ở E).
+2. Vào `/topup` → nạp 1.000.000 → OK, balance tăng.
+3. Topup 6.000.000 → fail với message "cần `kyc-verified`".
+4. Vào `/kyc` → submit giấy tờ (mock) → admin approve qua Keycloak Admin → assign role `kyc-verified` cho user → logout/login → topup 6.000.000 OK.
+
+### Kịch bản G — Logout + hết session
+
+1. Login đủ 3 app.
+2. Logout ở :3000.
+3. Reload :3100 và :3200 → khi token cũ hết hạn (default 5 phút), Keycloak phát hiện session đã chết → app redirect signin.
+
+> Back-channel logout chính thống (single logout đồng bộ ngay) cần thêm config — xem [todo.md](todo.md).
+
+---
+
+## Reset nhanh
+
+Khi sửa `keycloak/ecommerce-realm.json`, đổi user/role/client → cần wipe + import lại:
+
+```bash
+bash scripts/reset.sh
+```
+
+Script tự backup `pg_dumpall` ra `backup-YYYYMMDD-HHMM.sql` trước khi wipe.
 
 ---
 
@@ -203,121 +223,63 @@ Verify trong DevTools Network: request `/auth/realms/.../auth?...` trả 302 th�
 
 ```
 ecommerce-platform/
+├── .env / .env.example         # Secret root (Postgres + Keycloak admin + client secrets)
+├── package.json                # Root: concurrently runner cho 3 app
 ├── docker-compose.yml          # Postgres + Keycloak + Nginx
+├── scripts/reset.sh            # Wipe + reimport realm + tạo DB + push schema
+│
 ├── keycloak/
-│   └── ecommerce-realm.json    # Realm + 3 clients + roles + groups + users
-├── nginx/
-│   └── nginx.conf              # Reverse proxy + rate limit
+│   ├── ecommerce-realm.json    # Realm + clients + roles + groups + users (secret = ${VAR})
+│   └── entrypoint.sh           # Resolve ${VAR} từ env vào realm.json trước khi Keycloak start
+├── nginx/nginx.conf
 │
 ├── web-app/                    # ecommerce (3000)
 │   ├── app/                    # buyer/seller/admin pages + API
 │   ├── db/schema.ts            # stores, products, orders, cart, seller_upgrade_requests
 │   ├── lib/keycloak-admin.ts   # Keycloak Admin API client
-│   └── proxy.ts                # NextAuth middleware (RBAC)
+│   └── proxy.ts                # NextAuth middleware
 │
 ├── seller-workspace/           # back-office (3100)
-│   ├── app/
-│   │   ├── dashboard/page.tsx  # identity + roles + groups
-│   │   ├── staff/page.tsx      # mời + thu hồi nhân viên
-│   │   └── audit/page.tsx      # audit log read-only
+│   ├── app/dashboard, /staff, /audit
 │   ├── db/schema.ts            # staff_invitations, store_permissions, audit_logs
-│   ├── lib/audit.ts            # helper ghi audit
-│   └── proxy.ts
+│   └── lib/audit.ts
 │
-├── shoppay/                    # ví (3200)
-│   ├── app/
-│   │   ├── wallet/page.tsx     # số dư + transactions
-│   │   ├── topup/page.tsx      # nạp tiền (mock)
-│   │   └── kyc/page.tsx        # nộp giấy tờ
-│   ├── db/schema.ts            # wallets, transactions, kyc_documents
-│   ├── lib/wallet.ts           # topUp / pay (transactional)
-│   └── proxy.ts
-│
-├── README.md
-└── todo.md                     # Lộ trình mở rộng (SAML, FreeIPA, ...)
-```
-
----
-
-## Database schema
-
-**`ecommerce`**
-```
-stores  ─┬─→ products  ─┬─→ orders
-         │              └─→ cart_items
-         └─ seller_upgrade_requests
-```
-
-**`seller_workspace`**
-```
-staff_invitations   (storeId, email, role, status, invitedBy)
-store_permissions   (storeId, userId, role, grantedAt, revokedAt)
-audit_logs          (storeId, actorId, action, resource, metadata)
-```
-
-**`shoppay`**
-```
-wallets             (userId, currency, balance)
-transactions        (walletId, type, amount, status, externalRef, description)
-kyc_documents       (userId, fullName, docType, docNumber, status)
-```
-
----
-
-## Apply realm config sau khi sửa `ecommerce-realm.json`
-
-Keycloak chỉ import realm khi DB rỗng. Nếu đổi realm.json giữa chừng:
-
-```bash
-# Wipe chỉ DB Keycloak (giữ ecommerce/seller_workspace/shoppay)
-docker exec -i $(docker ps -qf "name=postgres") psql -U admin -d postgres -c "DROP DATABASE keycloak;"
-docker exec -i $(docker ps -qf "name=postgres") psql -U admin -d postgres -c "CREATE DATABASE keycloak;"
-docker compose restart keycloak
+└── shoppay/                    # ví (3200)
+    ├── app/wallet, /topup, /kyc
+    ├── db/schema.ts            # wallets, transactions, kyc_documents
+    └── lib/wallet.ts           # topUp / pay (transactional)
 ```
 
 ---
 
 ## Troubleshooting
 
-**`unauthorized_client (Invalid client credentials)` khi callback**
-→ Keycloak chưa load client mới. Wipe DB Keycloak + restart (xem trên).
-
-**`/dashboard` redirect về signin dù đã login**
-→ Cookie name custom phải khớp `cookieName` trong `proxy.ts` của app đó (mỗi app có cookie name riêng để 2/3 app không đè nhau trên localhost).
-
-**`Cannot find module '../lightningcss.linux-x64-gnu.node'`**
-→ Native binary thiếu trên WSL. seller-workspace + shoppay đã bỏ Tailwind v4 nên không cần. Nếu thêm lại: `npm install --include=optional`.
-
-**Next dev exit silently sau "Ready"**
-→ Đang dùng Node 25 (odd-numbered). Chuyển Node 22 LTS:
+**`invalid_client` khi login** → Secret trong app `.env` không khớp giá trị Keycloak đang giữ. Verify:
 ```bash
-nvm use 22
-rm -rf node_modules package-lock.json
-npm install
+grep CLIENT_SECRET .env web-app/.env seller-workspace/.env shoppay/.env
 ```
 
-**`database "ecommerce" does not exist`**
-→ Quên bước 2 (tạo DB).
+**`/dashboard` redirect lặp về signin** → Cookie name custom phải khớp giữa `app/api/auth/[...nextauth]/route.ts` và `proxy.ts` của app đó.
 
-**`CREATE DATABASE cannot run inside a transaction block`**
-→ Tách ra nhiều cờ `-c` riêng (xem bước 2).
+**`relation "products" does not exist`** → Chưa push schema. `bash scripts/reset.sh` hoặc `npm run db:push`.
 
-**`permission denied while trying to connect to the Docker daemon socket`**
-→ User WSL chưa thuộc group docker:
+**`permission denied … docker.sock`** → User WSL chưa thuộc group docker:
 ```bash
-sudo usermod -aG docker $USER
-exit   # mở lại WSL tab
+sudo usermod -aG docker $USER && exit   # mở lại WSL tab
 ```
 
-**`drizzle-kit push` báo `Either connection "url" or "host"...`**
-→ web-app dùng `.env.local` mà drizzle-kit không đọc. Tạo `.env`:
+**`CREATE DATABASE cannot run inside a transaction block`** → Mỗi DB tách 1 cờ `-c` riêng trong `psql`.
+
+**Next dev exit silently sau "Ready"** → Đang dùng Node 25/odd. Đổi Node 22 LTS:
 ```bash
-echo 'DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce' > .env
-npx drizzle-kit push
+nvm install 22 && nvm use 22 && rm -rf node_modules && npm install
 ```
 
-**Đã lỡ chạy `npm audit fix --force` và package.json hỏng**
-→ Lệnh đó downgrade `next-auth` về v3, vỡ tất cả import. Restore:
+**`WSL 1 is not supported`** khi chạy node trong WSL → đang gọi Windows node.exe. Cài node trong WSL hoặc chạy từ PowerShell.
+
+**`Can't resolve 'tailwindcss'`** → 3 `next.config.ts` phải có `turbopack: { root: import.meta.dirname }` để pin root vào app dir, không dùng monorepo root.
+
+**`npm audit fix --force` đã chạy lỡ tay** → Lệnh đó downgrade `next-auth` về v3, vỡ tất cả import. Restore:
 ```json
 "next-auth": "^4.24.13",
 "drizzle-kit": "^0.31.10"
@@ -328,13 +290,13 @@ Rồi `rm -rf node_modules package-lock.json && npm install`.
 
 ## Lộ trình mở rộng
 
-Xem [todo.md](todo.md). Các task lớn còn lại:
+Xem [todo.md](todo.md) và [PLAN.md](PLAN.md). Còn lại:
 
 - [ ] **SAML 2.0 Identity Brokering** — nhân viên seller login bằng IdP công ty (Azure AD / Okta).
 - [ ] **Google Identity Brokering** cho buyer.
 - [ ] Cross-app payment flow: `ecommerce checkout → shoppay /pay → ecommerce return`.
-- [ ] **Keycloak Event Listener SPI** — đồng bộ user create/update/delete sang `user_profile` cache.
 - [ ] **Back-channel logout** — Single Logout chuẩn.
-- [ ] **FreeIPA / Samba AD-DC + LDAP federation** — domain control cho thiết bị (downstream).
+- [ ] **Keycloak Event Listener SPI** — đồng bộ user create/update/delete sang `user_profile` cache.
+- [ ] **FreeIPA / Samba AD-DC + LDAP federation** — domain control cho thiết bị.
 - [ ] App **ShopFood** (multi-tenant restaurant marketplace).
-- [ ] Step-up auth cho ShopPay: re-prompt TOTP cho từng giao dịch lớn (không chỉ ở login).
+- [ ] Step-up auth ShopPay: re-prompt TOTP cho từng giao dịch lớn.
