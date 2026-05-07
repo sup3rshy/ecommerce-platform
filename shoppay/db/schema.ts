@@ -40,6 +40,17 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Cache user data từ Keycloak (xem todo 3.1)
+export const userProfile = pgTable("user_profile", {
+  sub: text("sub").primaryKey(),
+  email: text("email").notNull(),
+  name: text("name"),
+  preferredUsername: text("preferred_username"),
+  roles: jsonb("roles").$type<string[]>().notNull().default([]),
+  groups: jsonb("groups").$type<string[]>().notNull().default([]),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow().notNull(),
+});
+
 export const kycDocuments = pgTable("kyc_documents", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull().unique(),

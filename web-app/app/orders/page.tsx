@@ -2,10 +2,31 @@ import { desc, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import crypto from "node:crypto";
 
 import { authOptions } from "../api/auth/[...nextauth]/route";
 import { db } from "../../db";
 import { orders, products } from "../../db/schema";
+import { sign } from "../../lib/sig";
+
+const SHOPPAY_BASE = process.env.SHOPPAY_BASE_URL ?? "http://localhost:3200";
+
+function buildPayUrl(orderId: number, amount: number): string {
+  const nonce = crypto.randomBytes(8).toString("hex");
+  const returnUrl = "http://localhost:3000/payment/return";
+  const fields = {
+    merchant: "ecommerce",
+    orderId: String(orderId),
+    amount: String(amount),
+    returnUrl,
+    nonce,
+  };
+  const sig = sign(fields);
+  const url = new URL("/pay", SHOPPAY_BASE);
+  Object.entries(fields).forEach(([k, v]) => url.searchParams.set(k, v));
+  url.searchParams.set("sig", sig);
+  return url.toString();
+}
 
 type OrderStatus = "pending" | "shipping" | "completed";
 
@@ -73,6 +94,14 @@ export default async function OrdersPage() {
                     <p className="text-sm text-gray-600">SL: {order.quantity} x {order.unitPrice.toLocaleString("vi-VN")} VNĐ</p>
                     <p className="font-bold text-blue-700">{(order.unitPrice * order.quantity).toLocaleString("vi-VN")} VNĐ</p>
                     <p className="text-sm text-gray-700 mt-1">Trạng thái: {statusLabelMap[status] ?? status}</p>
+                    {status === "pending" && (
+                      <a
+                        href={buildPayUrl(order.id, order.unitPrice * order.quantity)}
+                        className="inline-block mt-2 px-3 py-1 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600"
+                      >
+                        ⚡ Pay với ShopPay
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>

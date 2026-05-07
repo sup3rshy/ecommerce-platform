@@ -1,5 +1,6 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import KeycloakProvider from "next-auth/providers/keycloak";
+import { syncUserProfile } from "../../../../lib/syncUserProfile";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -39,13 +40,27 @@ export const authOptions: NextAuthOptions = {
     },
   },
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, profile }) {
       if (account) {
         token.idToken = account.id_token;
       }
       if (user) {
         token.roles = user.roles;
         token.id = user.id;
+        try {
+          await syncUserProfile({
+            sub: user.id as string,
+            email: user.email as string,
+            name: user.name ?? null,
+            preferredUsername:
+              (profile as { preferred_username?: string } | undefined)
+                ?.preferred_username ?? null,
+            roles: (user.roles as string[]) ?? [],
+            groups: [],
+          });
+        } catch (err) {
+          console.error("syncUserProfile failed:", err);
+        }
       }
       return token;
     },

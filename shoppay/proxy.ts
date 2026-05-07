@@ -13,7 +13,11 @@ export default async function proxy(req: NextRequest) {
 
   if (!token) {
     const signInUrl = new URL("/api/auth/signin", req.url);
-    signInUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    // Giữ cả query string vào callbackUrl — quan trọng cho /pay vì params thanh toán nằm ở đó
+    signInUrl.searchParams.set(
+      "callbackUrl",
+      req.nextUrl.pathname + req.nextUrl.search
+    );
     return NextResponse.redirect(signInUrl);
   }
 }

@@ -2,6 +2,37 @@
 
 import { signIn, signOut } from "next-auth/react";
 import Link from "next/link";
+import { useState } from "react";
+
+async function robustSignIn(provider: string, callbackUrl = "/") {
+  try {
+    const result = await signIn(provider, { callbackUrl, redirect: false });
+    if (result?.url) {
+      window.location.href = result.url;
+      return;
+    }
+  } catch {
+    // fall through
+  }
+  // Fallback nếu fetch /api/auth/csrf timeout (Turbopack đang compile lần đầu)
+  window.location.href = `/api/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+}
+
+function SignInButton() {
+  const [loading, setLoading] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        setLoading(true);
+        await robustSignIn("keycloak", "/");
+      }}
+      disabled={loading}
+      className="btn btn-primary"
+    >
+      {loading ? "Đang chuyển..." : "Đăng nhập SSO"}
+    </button>
+  );
+}
 
 export function TopBar({
   isAuthenticated,
@@ -44,12 +75,7 @@ export function TopBar({
             </button>
           </>
         ) : (
-          <button
-            onClick={() => signIn("keycloak")}
-            className="btn btn-primary"
-          >
-            Đăng nhập SSO
-          </button>
+          <SignInButton />
         )}
       </div>
     </header>

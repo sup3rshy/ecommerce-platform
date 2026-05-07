@@ -1,14 +1,27 @@
 services:
-  postgres:
+  # === Postgres dành riêng cho Keycloak (nội bộ, không expose) ===
+  postgres-keycloak:
     image: postgres:15
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_keycloak_data:/var/lib/postgresql/data
+    # KHÔNG expose port: Keycloak nói chuyện qua docker network thôi.
+
+  # === Postgres dành cho ecommerce / seller_workspace / shoppay ===
+  postgres-app:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ecommerce
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_app_data:/var/lib/postgresql/data
+      - ./scripts/init-app-dbs.sql:/docker-entrypoint-initdb.d/init-app-dbs.sql:ro
 
   keycloak:
     image: quay.io/keycloak/keycloak:latest
@@ -16,7 +29,7 @@ services:
     command: ["start-dev", "--import-realm"]
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_URL: jdbc:postgresql://postgres-keycloak:5432/keycloak
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
@@ -30,12 +43,10 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount template (chứa ${VAR}) sang đường dẫn trung gian; entrypoint sẽ resolve
-      # rồi ghi ra /opt/keycloak/data/import/realm.json để Keycloak import.
       - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/realm.json:ro
       - ./keycloak/entrypoint.sh:/custom-entrypoint.sh:ro
     depends_on:
-      - postgres
+      - postgres-keycloak
 
   nginx:
     image: nginx:1.27
@@ -49,4 +60,5 @@ services:
       - "host.docker.internal:host-gateway"
 
 volumes:
-  postgres_data:
+  postgres_keycloak_data:
+  postgres_app_data:

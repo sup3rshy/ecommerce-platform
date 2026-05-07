@@ -25,7 +25,7 @@ export default async function proxy(req: NextRequest) {
   const roles = (token.roles ?? []) as string[];
   const allowed = roles.some((r) => ALLOWED_ROLES.includes(r));
   if (!allowed) {
-    return NextResponse.redirect(new URL("/?denied=role", req.url));
+    return NextResponse.redirect(new URL("/denied", req.url));
   }
 }
 

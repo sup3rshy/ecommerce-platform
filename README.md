@@ -91,6 +91,7 @@ Script này:
 ### 4. Chạy 3 app cùng lúc
 
 ```bash
+npm run db:push
 npm run dev
 ```
 

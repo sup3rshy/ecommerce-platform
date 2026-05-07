@@ -48,6 +48,18 @@ export const storePermissions = pgTable(
   })
 );
 
+// Cache user data từ Keycloak để khỏi gọi Admin API mỗi request.
+// Sync mỗi lần user login (jwt callback). Đây không phải nguồn truth — chỉ là cache.
+export const userProfile = pgTable("user_profile", {
+  sub: text("sub").primaryKey(), // Keycloak user id (subject claim)
+  email: text("email").notNull(),
+  name: text("name"),
+  preferredUsername: text("preferred_username"),
+  roles: jsonb("roles").$type<string[]>().notNull().default([]),
+  groups: jsonb("groups").$type<string[]>().notNull().default([]),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow().notNull(),
+});
+
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id"),

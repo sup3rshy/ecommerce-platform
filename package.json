@@ -2,7 +2,8 @@
   "name": "ecommerce-platform",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n web,seller,pay -c blue,green,magenta \"npm --prefix web-app run dev\" \"npm --prefix seller-workspace run dev\" \"npm --prefix shoppay run dev\"",
+    "dev": "concurrently -n web,seller,pay,warm -c blue,green,magenta,gray \"npm --prefix web-app run dev\" \"npm --prefix seller-workspace run dev\" \"npm --prefix shoppay run dev\" \"bash scripts/warmup.sh\"",
+    "dev:webpack": "concurrently -n web,seller,pay -c blue,green,magenta \"npm --prefix web-app run dev -- --webpack\" \"npm --prefix seller-workspace run dev -- --webpack\" \"npm --prefix shoppay run dev -- --webpack\"",
     "db:push": "cd web-app && npx drizzle-kit push && cd ../seller-workspace && npm run db:push && cd ../shoppay && npm run db:push"
   },
   "devDependencies": {
