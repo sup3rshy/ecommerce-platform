@@ -94,7 +94,13 @@ Script này:
 npm run dev
 ```
 
-3 app cùng start, log có prefix màu `[web]` `[seller]` `[pay]`. `Ctrl+C` 1 lần kill cả 3.
+3 app cùng start trong 1 terminal, log có prefix màu `[web]` `[seller]` `[pay]`. `Ctrl+C` 1 lần kill cả 3.
+
+> KHÔNG cần `cd` vào từng `web-app/`, `seller-workspace/`, `shoppay/`. Mọi lệnh đời sống (`dev`, `db:push`) đều chạy ở **root repo**.
+
+> Lần đầu mỗi app sẽ compile chậm (~20–30s do Turbopack). Trong lúc đó browser có thể báo
+> `CLIENT_FETCH_ERROR / NetworkError when attempting to fetch resource` — đây là next-auth client
+> timeout chờ `/api/auth/session`. Refresh trang sau khi log thấy `Ready` là hết.
 
 ---
 
@@ -262,6 +268,10 @@ grep CLIENT_SECRET .env web-app/.env seller-workspace/.env shoppay/.env
 **`/dashboard` redirect lặp về signin** → Cookie name custom phải khớp giữa `app/api/auth/[...nextauth]/route.ts` và `proxy.ts` của app đó.
 
 **`relation "products" does not exist`** → Chưa push schema. `bash scripts/reset.sh` hoặc `npm run db:push`.
+
+**`CLIENT_FETCH_ERROR / NetworkError when attempting to fetch resource`** → next-auth client timeout chờ `/api/auth/session` lúc Turbopack compile lần đầu (xem log thấy session 200 sau 13–20s). Refresh trang khi đã `Ready` là hết. Nếu kéo dài, kiểm tra `NEXTAUTH_URL` trong app `.env` có đúng port không.
+
+**Buyer login :3100 bị redirect `/?denied=role`** → Đúng intent. `seller-workspace/proxy.ts` chỉ cho `seller / admin / staff-*` vào `/dashboard`, `/staff`, `/audit`. Để test :3100, dùng `seller1` hoặc `warehouse1` / `cs1` / `finance1`.
 
 **`permission denied … docker.sock`** → User WSL chưa thuộc group docker:
 ```bash
