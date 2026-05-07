@@ -1043,7 +1043,7 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "${SHOPPAY_CLIENT_SECRET}",
       "authenticationFlowBindingOverrides": {
-        "browser": "browser-shoppay"
+        "browser": "6b5a8642-7a11-4e18-b163-498929bb0e2b"
       },
       "redirectUris": [
         "http://localhost:3200",

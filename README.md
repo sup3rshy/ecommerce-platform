@@ -72,62 +72,19 @@ flowchart TB
 
 Yêu cầu: Docker + Node.js 22 LTS. WSL/Linux/Mac đều OK.
 
-### 1. Clone + tạo `.env` ở root
-
 ```bash
 git clone <repo> && cd ecommerce-platform
-cp .env.example .env
 
-# Sinh secret thật cho mọi biến
-node -e "['POSTGRES_PASSWORD','KEYCLOAK_ADMIN_PASSWORD','NEXTJS_APP_CLIENT_SECRET','SELLER_WORKSPACE_CLIENT_SECRET','SHOPPAY_CLIENT_SECRET','BACKEND_ADMIN_CLIENT_SECRET'].forEach(k=>console.log(k+'='+require('crypto').randomBytes(32).toString('hex')))"
-# → copy output, paste đè vào .env
+bash scripts/bootstrap.sh    # sinh secret, tạo root .env + 3 app .env (idempotent)
+bash scripts/reset.sh        # up infra Docker + push DB schema cho 3 app
+npm install && npm run dev   # cài concurrently + chạy cả 3 app
 ```
 
-> File `.env` này là **nguồn duy nhất** của Postgres password, Keycloak admin password, và 4 client secret. Đã có sẵn trong `.gitignore`.
+Xong. 3 app sống ở :3000 / :3100 / :3200, Keycloak :8080. `Ctrl+C` 1 lần kill cả 3.
 
-### 2. Tạo `.env` cho 3 app
+> Mọi lệnh đời sống (`dev`, `db:push`) chạy ở **root**. KHÔNG `cd` vào `web-app/`, `seller-workspace/`, `shoppay/`.
 
-Mỗi app cần `.env` riêng để Next.js đọc lúc runtime. Giá trị **phải khớp** với root `.env`.
-
-```bash
-for d in web-app seller-workspace shoppay; do
-  cp $d/.env.example $d/.env
-  echo "→ sửa $d/.env: thay CHANGEME-* bằng giá trị tương ứng từ root .env"
-done
-```
-
-Cụ thể trong từng app `.env`:
-- `DATABASE_URL` → password phải = `POSTGRES_PASSWORD` ở root.
-- `KEYCLOAK_CLIENT_SECRET` → phải = `<APP>_CLIENT_SECRET` ở root (web-app dùng `NEXTJS_APP_CLIENT_SECRET`).
-- `NEXTAUTH_SECRET` → sinh riêng bằng `openssl rand -hex 32` hoặc `node -e ...`.
-
-### 3. Bootstrap hạ tầng + DB + schema
-
-```bash
-npm install               # cài concurrently ở root
-bash scripts/reset.sh
-```
-
-Script này:
-- Wipe Postgres volume cũ (nếu có) → up lại Keycloak với secret mới
-- Đợi Keycloak ready
-- Tạo 3 DB `ecommerce` / `seller_workspace` / `shoppay`
-- Push Drizzle schema cho cả 3 app
-
-### 4. Chạy 3 app cùng lúc
-
-```bash
-npm run db:push
-npm run dev
-```
-
-3 app cùng start trong 1 terminal, log có prefix màu `[web]` `[seller]` `[pay]`. `Ctrl+C` 1 lần kill cả 3.
-
-> KHÔNG cần `cd` vào từng `web-app/`, `seller-workspace/`, `shoppay/`. Mọi lệnh đời sống (`dev`, `db:push`) đều chạy ở **root repo**.
-
-> Lần đầu mỗi app sẽ compile chậm (~20–30s do Turbopack). Trong lúc đó browser có thể báo
-> `CLIENT_FETCH_ERROR / NetworkError when attempting to fetch resource` — đây là next-auth client
-> timeout chờ `/api/auth/session`. Refresh trang sau khi log thấy `Ready` là hết.
+> Lần đầu mỗi route compile ~20–30s (Turbopack). Đã có warmup script chạy ngầm pre-compile các route chính, log thấy `[warm] ✓ done` là routes ấm rồi.
 
 ---
 
