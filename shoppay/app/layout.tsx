@@ -33,6 +33,7 @@ export default async function RootLayout({
             <TopBar
               isAuthenticated={Boolean(session?.user?.id)}
               userName={session?.user?.name}
+              roles={session?.user?.roles ?? []}
             />
             <main className="card">{children}</main>
           </div>

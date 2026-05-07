@@ -1,6 +1,7 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import KeycloakProvider from "next-auth/providers/keycloak";
 import { syncUserProfile } from "../../../../lib/syncUserProfile";
+import { refreshAccessToken } from "../../../../lib/refreshAccessToken";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -41,8 +42,14 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, account, profile }) {
+      // Initial sign-in: capture access/refresh token + expiry
       if (account) {
         token.idToken = account.id_token;
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.accessTokenExpires = account.expires_at
+          ? account.expires_at * 1000
+          : Date.now() + 5 * 60 * 1000;
       }
       if (user) {
         token.roles = user.roles;
@@ -62,7 +69,13 @@ export const authOptions: NextAuthOptions = {
           console.error("syncUserProfile failed:", err);
         }
       }
-      return token;
+      // Token vẫn còn hạn — trả về như cũ
+      const expires = token.accessTokenExpires as number | undefined;
+      if (expires && Date.now() < expires - 60_000) {
+        return token;
+      }
+      // Hết hạn (hoặc gần hết) → refresh
+      return await refreshAccessToken(token);
     },
     async session({ session, token }) {
       if (session.user) {

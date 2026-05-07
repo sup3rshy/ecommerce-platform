@@ -39,4 +39,7 @@ echo "→ push schema..."
 (cd seller-workspace && npm run db:push)
 (cd shoppay          && npm run db:push)
 
+echo "→ seed ecommerce sample data..."
+(cd web-app && npx tsx db/seed.ts) || echo "  (seed skip — install tsx hoặc đợi seller1 login)"
+
 echo "✓ Done. Login http://localhost:3000 / 3100 / 3200"

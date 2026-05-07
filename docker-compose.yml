@@ -45,10 +45,46 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/realm.json:ro
+      - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/ecommerce-realm.json:ro
+      - ./keycloak/acme-corp-realm.json:/opt/keycloak/data/import-template/acme-corp-realm.json:ro
       - ./keycloak/entrypoint.sh:/custom-entrypoint.sh:ro
     depends_on:
       - postgres-keycloak
+
+  # === FreeIPA — Domain Controller (LDAP + Kerberos) ===
+  # Heavy infra, KHÔNG tự start với `compose up` thường.
+  # Chạy có chủ ý: docker compose --profile domain up -d freeipa
+  # Mất ~5-10 phút lần đầu provision. RAM ~1-1.5GB.
+  # Sau khi up, vào Keycloak Admin Console wire LDAP federation (xem README).
+  freeipa:
+    image: freeipa/freeipa-server:rocky-9
+    profiles: ["domain"]
+    hostname: ipa.example.test
+    environment:
+      IPA_SERVER_IP: 127.0.0.1
+    command:
+      - "ipa-server-install"
+      - "--unattended"
+      - "--realm=EXAMPLE.TEST"
+      - "--domain=example.test"
+      - "--ds-password=DirectoryManager@2024"
+      - "--admin-password=Admin@2024"
+      - "--no-ntp"
+      - "--no-host-dns"
+    ports:
+      - "389:389"     # LDAP (cho Keycloak federation)
+      - "636:636"     # LDAPS
+      - "443:443"     # FreeIPA web UI
+      - "88:88/tcp"   # Kerberos KDC
+      - "88:88/udp"
+    volumes:
+      - freeipa_data:/data
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    cap_add:
+      - SYS_TIME
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27
@@ -64,3 +100,4 @@ services:
 volumes:
   postgres_keycloak_data:
   postgres_app_data:
+  freeipa_data:

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "../api/auth/[...nextauth]/route";
 import { topUp, getOrCreateWallet, formatVND } from "@/lib/wallet";
+import { logAudit } from "@/lib/audit";
 
 const PRESETS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
@@ -29,6 +30,14 @@ async function doTopUp(formData: FormData) {
     userId: session.user.id,
     amount,
     description: "Nạp tiền qua mock gateway",
+  });
+
+  await logAudit({
+    actorId: session.user.id,
+    actorName: session.user.name,
+    action: "wallet.topup",
+    resource: `user:${session.user.id}`,
+    metadata: { amount, currency: "VND" },
   });
 
   revalidatePath("/wallet");

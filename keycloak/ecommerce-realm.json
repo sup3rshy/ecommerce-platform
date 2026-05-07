@@ -924,9 +924,10 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "publicClient": false,
-      "frontchannelLogout": false,
+      "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
+        "frontchannel.logout.url": "http://localhost:3000/api/auth/frontchannel-logout",
         "realm_client": "false",
         "logout.confirmation.enabled": "false",
         "oidc.ciba.grant.enabled": "false",
@@ -993,8 +994,10 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "publicClient": false,
+      "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
+        "frontchannel.logout.url": "http://localhost:3100/api/auth/frontchannel-logout",
         "post.logout.redirect.uris": "http://localhost:3100##http://localhost:3100/"
       },
       "fullScopeAllowed": true,
@@ -1056,8 +1059,10 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "publicClient": false,
+      "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
+        "frontchannel.logout.url": "http://localhost:3200/api/auth/frontchannel-logout",
         "post.logout.redirect.uris": "http://localhost:3200##http://localhost:3200/"
       },
       "fullScopeAllowed": true,
@@ -1933,6 +1938,34 @@
   "adminEventsDetailsEnabled": false,
   "identityProviders": [
     {
+      "alias": "acme-corp",
+      "displayName": "Sign in with Acme Corp (SAML)",
+      "providerId": "saml",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "linkOnly": false,
+      "hideOnLogin": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "singleSignOnServiceUrl": "http://localhost:8080/realms/acme-corp-realm/protocol/saml",
+        "entityId": "http://localhost:8080/realms/ecommerce-realm",
+        "idpEntityId": "http://localhost:8080/realms/acme-corp-realm",
+        "nameIDPolicyFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        "principalType": "SUBJECT",
+        "postBindingResponse": "true",
+        "postBindingAuthnRequest": "true",
+        "postBindingLogout": "true",
+        "validateSignature": "false",
+        "wantAssertionsSigned": "false",
+        "wantAssertionsEncrypted": "false",
+        "wantAuthnRequestsSigned": "false",
+        "signSpMetadata": "false",
+        "syncMode": "IMPORT",
+        "allowCreate": "true"
+      }
+    },
+    {
       "alias": "google",
       "displayName": "",
       "internalId": "29b1a407-f6b1-4f25-adc9-8839dd5e4eae",
@@ -1957,12 +1990,51 @@
   ],
   "identityProviderMappers": [
     {
-      "name": "google-email-verified-to-buyer",
+      "name": "google-to-buyer",
       "identityProviderAlias": "google",
       "identityProviderMapper": "oidc-hardcoded-role-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
         "role": "buyer"
+      }
+    },
+    {
+      "name": "acme-corp-to-seller",
+      "identityProviderAlias": "acme-corp",
+      "identityProviderMapper": "saml-hardcoded-role-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "role": "seller"
+      }
+    },
+    {
+      "name": "acme-corp-firstName",
+      "identityProviderAlias": "acme-corp",
+      "identityProviderMapper": "saml-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "attribute.name": "firstName",
+        "user.attribute": "firstName"
+      }
+    },
+    {
+      "name": "acme-corp-lastName",
+      "identityProviderAlias": "acme-corp",
+      "identityProviderMapper": "saml-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "attribute.name": "lastName",
+        "user.attribute": "lastName"
+      }
+    },
+    {
+      "name": "acme-corp-email",
+      "identityProviderAlias": "acme-corp",
+      "identityProviderMapper": "saml-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "attribute.name": "email",
+        "user.attribute": "email"
       }
     }
   ],

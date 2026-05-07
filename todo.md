@@ -25,14 +25,12 @@ Phân loại:
    4. `bash scripts/reset.sh` để Keycloak import lại với credential mới.
    5. Test: vào http://localhost:3000 → click "Đăng nhập" → trang Keycloak có thêm nút "Sign in with Google" → click → Google consent → quay về app.
 - [x] **IdentityProviderMapper** — auto-assign role `buyer` cho mọi user login qua Google. (Có thể đổi mapper sang `oidc-role-idp-mapper` để mapping theo claim cụ thể nếu muốn refined.)
-- [ ] 🟡 **SAML 2.0 brokering** cho Seller Workspace — phức tạp hơn dự tính:
-   1. Tạo realm `acme-corp-realm` trong cùng Keycloak (Admin Console → Create realm).
-   2. Trong `acme-corp-realm`, tạo SAML client với clientId = `http://localhost:8080/realms/ecommerce-realm` (audience).
-   3. Export SAML metadata XML của `acme-corp-realm` (`http://localhost:8080/realms/acme-corp-realm/protocol/saml/descriptor`).
-   4. Trong `ecommerce-realm`, tạo Identity Provider type SAML, paste metadata XML.
-   5. Tạo vài user demo trong `acme-corp-realm`: `john.doe@acme.com`, etc.
-   6. Test: vào :3100 → có thêm nút "Sign in with Acme Corp" → redirect SAML → quay về với role `seller`.
-   - **Ước tính**: 2-3h, nhiều bước qua Admin Console UI vì metadata exchange runtime khó cứng hoá trong realm JSON.
+- [x] **SAML 2.0 brokering** cho Seller Workspace — fully automated qua realm thứ 2:
+   - [`keycloak/acme-corp-realm.json`](keycloak/acme-corp-realm.json): mock company IdP với 2 user `john.doe` / `jane.smith` (password `Acme@2024`), 1 SAML client cho `ecommerce-realm` SP.
+   - `ecommerce-realm`: thêm IdP `acme-corp` (providerId=saml) trỏ về `acme-corp-realm` SAML endpoint, mapper auto-assign role `seller`.
+   - `entrypoint.sh` rewrite — import multiple realm files từ `/import-template/*.json`.
+   - Compose mount cả 2 realm files.
+   - Test: kịch bản G1 trong README.
 - [x] **TOTP enforce per-client cho `shoppay-app`** — Authentication Flow `browser-shoppay` (clone của browser, OTP REQUIRED + `userSetupAllowed=true`). Flow này được bind vào `shoppay-app.authenticationFlowBindingOverrides.browser`. Mọi user login ShopPay đều bị bắt setup TOTP nếu chưa có, và phải nhập code mỗi lần login.
 - [x] **Keycloak Groups**: `store-demo-1` với 3 sub-group warehouse/cs/finance + 3 user mẫu.
 
@@ -46,11 +44,22 @@ Phân loại:
 ## 4. Demo flow
 
 - [x] **Cross-app payment ecommerce → ShopPay → return** với HMAC signing 2 chiều, idempotent dedupe theo `merchant:orderId`.
+- [x] **KYC admin approve flow** — `/kyc/admin` page cho admin/staff-finance review pending submissions; approve gọi Keycloak Admin API (client_credentials grant từ `backend-admin-client`) gán role `kyc-verified`. Action được audit log.
+- [x] **ShopPay audit log** — bảng `audit_logs`, helper [`lib/audit.ts`](shoppay/lib/audit.ts), wired vào topup / pay / kyc.approve / kyc.reject. Page `/audit` read-only cho admin/staff-finance.
 - [ ] 🟡 **Seller Workspace SAML SSO** — phụ thuộc 2.4 SAML IdP (xem trên).
 
 ## 5. Domain control (downstream)
 
-- [ ] 🟡 **FreeIPA / Samba AD-DC + LDAP federation** — heavy infra, multi-day. Defer.
+- [~] **FreeIPA + LDAP federation** — service đã có trong [docker-compose.yml](docker-compose.yml) profile `domain`, [scripts/freeipa-seed.sh](scripts/freeipa-seed.sh) seed 2 user demo. LDAP federation config phải làm tay qua Keycloak Admin Console (xem README kịch bản G2). Lý do không tự động: LDAP federation provider trong realm.json import dễ break (cần cert chain, password encryption, mapper config phức tạp).
+- [ ] 🟡 **Demo Kerberos SSO end-to-end** — join 1 VM Linux vào domain `EXAMPLE.TEST`, ssh dùng cùng password Keycloak. Out-of-scope cho demo platform này.
+
+## 7. Hardening & polish
+
+- [x] **Refresh token rotation** — NextAuth `jwt` callback check `accessTokenExpires`, gọi Keycloak `/token` với `grant_type=refresh_token` khi sắp hết hạn. Nếu refresh fail (refresh token revoked), set `token.error = "RefreshAccessTokenError"` để client biết. File: [`lib/refreshAccessToken.ts`](web-app/lib/refreshAccessToken.ts) ở cả 3 app.
+- [x] **Frontchannel logout (SLO)** — 3 client có `frontchannelLogout=true` + `frontchannel.logout.url`; mỗi app có `/api/auth/frontchannel-logout` route xoá NextAuth session cookie. Khi user logout 1 app → Keycloak load iframe các app khác → cookie bị clear → app đó cũng signout.
+- [x] **`/admin/users` UI** — list user + role chips clickable (revoke) + dropdown thêm role. POST `/api/admin/users/role` gọi Keycloak Admin API. Chỉ user có role `admin` access được.
+- [x] **SAML attribute mappers** — firstName/lastName/email từ acme-corp SAML assertion → user attributes trong ecommerce-realm.
+- [x] **Sample data seed** — [`web-app/db/seed.ts`](web-app/db/seed.ts) tạo 2 store + 6 product. Tự attach owner = sub của seller1 nếu user_profile đã có; hoặc placeholder + rerun sau.
 
 ## 6. Đóng gói & báo cáo
 

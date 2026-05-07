@@ -40,6 +40,19 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Audit log mọi action nhạy cảm: topup, pay, kyc.approve, kyc.reject, ...
+// Dùng cho compliance (PSD2, PCI-DSS đều require audit trail).
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  actorId: text("actor_id").notNull(),
+  actorName: text("actor_name"),
+  action: text("action").notNull(),
+  resource: text("resource"),
+  metadata: jsonb("metadata"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Cache user data từ Keycloak (xem todo 3.1)
 export const userProfile = pgTable("user_profile", {
   sub: text("sub").primaryKey(),

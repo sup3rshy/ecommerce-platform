@@ -85,6 +85,12 @@ if ! grep -q '^MERCHANT_HMAC_SECRET=' shoppay/.env 2>/dev/null; then
   echo "" >> shoppay/.env
   echo "MERCHANT_HMAC_SECRET=$MERCHANT_HMAC_SECRET" >> shoppay/.env
 fi
+if ! grep -q '^KEYCLOAK_ADMIN_CLIENT_ID=' shoppay/.env 2>/dev/null; then
+  cat >> shoppay/.env <<EOF
+KEYCLOAK_ADMIN_CLIENT_ID=backend-admin-client
+KEYCLOAK_ADMIN_CLIENT_SECRET=$BACKEND_ADMIN_CLIENT_SECRET
+EOF
+fi
 
 echo
 echo "✓ Bootstrap done. Tiếp theo:"

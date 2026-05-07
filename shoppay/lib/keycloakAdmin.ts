@@ -208,27 +208,6 @@ export async function assignRealmRoleToUser(userId: string, roleName: string): P
   }
 }
 
-export async function removeRealmRoleFromUser(userId: string, roleName: string): Promise<void> {
-  const config = getKeycloakAdminConfig();
-  const accessToken = await getAdminAccessToken(config);
-  const roleRepresentation = await getRealmRoleByName(config, accessToken, roleName);
-
-  const endpoint = `${config.serverUrl}/admin/realms/${config.realm}/users/${encodeURIComponent(userId)}/role-mappings/realm`;
-  const response = await fetch(endpoint, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([roleRepresentation]),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Cannot remove realm role '${roleName}' from user '${userId}'.`);
-  }
-}
-
 export async function getKeycloakUserCount(): Promise<number | null> {
   try {
     const config = getKeycloakAdminConfig();

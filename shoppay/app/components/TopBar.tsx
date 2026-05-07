@@ -34,13 +34,18 @@ function SignInButton() {
   );
 }
 
+const REVIEWER_ROLES = ["admin", "staff-finance"];
+
 export function TopBar({
   isAuthenticated,
   userName,
+  roles = [],
 }: {
   isAuthenticated: boolean;
   userName?: string | null;
+  roles?: string[];
 }) {
+  const canReviewKyc = roles.some((r) => REVIEWER_ROLES.includes(r));
   return (
     <header className="topbar">
       <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
@@ -52,6 +57,8 @@ export function TopBar({
             <Link href="/wallet">Ví của tôi</Link>
             <Link href="/topup">Nạp tiền</Link>
             <Link href="/kyc">KYC</Link>
+            {canReviewKyc && <Link href="/kyc/admin">KYC Review</Link>}
+            {canReviewKyc && <Link href="/audit">Audit log</Link>}
           </nav>
         )}
       </div>

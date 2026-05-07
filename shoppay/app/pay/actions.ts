@@ -8,6 +8,7 @@ import { pay } from "../../lib/wallet";
 import { db } from "../../db";
 import { transactions } from "../../db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "../../lib/audit";
 
 /**
  * Server action confirm payment. Đầu vào:
@@ -66,6 +67,14 @@ export async function confirmPayment(formData: FormData) {
       .limit(1);
     txnId = created.id;
   }
+
+  await logAudit({
+    actorId: session.user.id,
+    actorName: session.user.name,
+    action: "wallet.pay",
+    resource: externalRef,
+    metadata: { merchant, orderId, amount: amountNum, txnId },
+  });
 
   // Build return URL với HMAC trên (orderId, status, txnId)
   const returnSig = sign({ orderId, status: "success", txnId });

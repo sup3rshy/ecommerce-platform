@@ -1,6 +1,91 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const ASSIGNABLE_ROLES = [
+  "buyer",
+  "seller",
+  "admin",
+  "wallet-user",
+  "kyc-verified",
+  "staff-warehouse",
+  "staff-cs",
+  "staff-finance",
+];
+const HIDDEN_ROLES = new Set([
+  "offline_access",
+  "uma_authorization",
+  "default-roles-ecommerce-realm",
+]);
+
+function UserRolesEditor({ user }: { user: { id: string; roles: string[] } }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const visible = user.roles.filter((r) => !HIDDEN_ROLES.has(r));
+  const available = ASSIGNABLE_ROLES.filter((r) => !visible.includes(r));
+
+  async function call(action: "assign" | "revoke", role: string) {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/admin/users/role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, role, action }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        alert(`Lỗi: ${body.error ?? r.status}`);
+      } else {
+        router.refresh();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {visible.length === 0 && (
+        <span className="text-xs text-slate-400">Không có</span>
+      )}
+      {visible.map((r) => (
+        <button
+          key={r}
+          onClick={() => call("revoke", r)}
+          disabled={busy}
+          className="px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800 hover:bg-red-100 hover:text-red-700 hover:line-through disabled:opacity-50"
+          title={`Click để gỡ role ${r}`}
+        >
+          {r} ✕
+        </button>
+      ))}
+      {available.length > 0 && (
+        <select
+          disabled={busy}
+          defaultValue=""
+          onChange={(e) => {
+            const role = e.target.value;
+            if (role) {
+              call("assign", role);
+              e.target.value = "";
+            }
+          }}
+          className="text-xs border rounded px-1 py-0.5 disabled:opacity-50"
+        >
+          <option value="" disabled>
+            + thêm
+          </option>
+          {available.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
 
 type UserSummary = {
   id: string;
@@ -164,7 +249,7 @@ export default function AdminUserPanel({ initialUsers, initialPendingRequests }:
                   </td>
                   <td className="px-3 py-2 align-top text-slate-700">{user.email ?? "Không có"}</td>
                   <td className="px-3 py-2 align-top text-slate-700">
-                    {user.roles.length > 0 ? user.roles.join(", ") : "Không có"}
+                    <UserRolesEditor user={user} />
                   </td>
                   <td className="px-3 py-2 align-top text-slate-700">{user.orderCount}</td>
                   <td className="px-3 py-2 align-top text-slate-700">{user.storeCount}</td>

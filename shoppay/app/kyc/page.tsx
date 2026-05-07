@@ -132,10 +132,11 @@ export default async function KycPage() {
       </section>
 
       <div className="alert-info">
-        💡 Trong production: reviewer (admin) sẽ approve qua admin panel, sau
-        đó gọi <strong>Keycloak Admin API</strong> để gán role
-        <code className="code-inline">kyc-verified</code> cho user. Hiện chưa
-        wire bước approve — bạn có thể đổi status thủ công trong DB để demo.
+        💡 Sau khi nộp, reviewer (role <code className="code-inline">admin</code> hoặc
+        <code className="code-inline">staff-finance</code>) sẽ duyệt qua{" "}
+        <a href="/kyc/admin">/kyc/admin</a> → khi approve, ShopPay tự gọi Keycloak
+        Admin API gán role <code className="code-inline">kyc-verified</code> cho bạn.
+        Bạn cần logout/login lại để token có role mới.
       </div>
     </div>
   );

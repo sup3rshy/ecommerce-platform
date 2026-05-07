@@ -68,6 +68,106 @@ flowchart TB
 
 ---
 
+## Sequence diagrams
+
+### OIDC silent SSO cross-app (Kịch bản B)
+
+```mermaid
+sequenceDiagram
+    participant U as User Browser
+    participant A1 as ecommerce :3000
+    participant KC as Keycloak :8080
+    participant A2 as seller-workspace :3100
+
+    U->>A1: 1. Login form
+    A1->>KC: 2. authz request
+    KC->>U: 3. Login page
+    U->>KC: 4. credentials
+    KC-->>A1: 5. code → token
+    A1->>U: Set ecommerce.session-token cookie<br/>+ KEYCLOAK_SESSION cookie
+
+    Note over U: User opens :3100 tab
+
+    U->>A2: 6. /dashboard (no session)
+    A2->>KC: 7. authz request (silent)
+    KC-->>U: 8. KEYCLOAK_SESSION cookie có sẵn<br/>→ skip login form
+    KC-->>A2: 9. code → token
+    A2->>U: Set seller-workspace.session-token<br/>vào /dashboard
+```
+
+### SAML brokering (Kịch bản G1)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as seller-workspace :3100
+    participant KC as Keycloak<br/>ecommerce-realm
+    participant IdP as Keycloak<br/>acme-corp-realm
+
+    U->>A: 1. Click "Đăng nhập SSO"
+    A->>KC: 2. authz request
+    KC->>U: 3. Login page có nút<br/>"Sign in with Acme Corp"
+    U->>KC: 4. Click SAML button
+    KC->>IdP: 5. SAML AuthnRequest (POST binding)
+    IdP->>U: 6. Acme Corp login form
+    U->>IdP: 7. john.doe / Acme@2024
+    IdP-->>KC: 8. SAML Response<br/>(POST /broker/acme-corp/endpoint)
+    KC->>KC: 9. Verify, run "first broker login"<br/>+ apply mapper → role: seller
+    KC-->>A: 10. OIDC code → token<br/>(roles=[seller])
+    A->>U: 11. /dashboard (logged in)
+```
+
+### Cross-app payment với HMAC (Kịch bản F2/F3)
+
+```mermaid
+sequenceDiagram
+    participant U as User Browser
+    participant E as ecommerce :3000
+    participant S as ShopPay :3200
+
+    U->>E: 1. /orders → click "Pay"
+    E->>E: 2. Build URL:<br/>?orderId,amount,returnUrl,nonce<br/>+ sig=HMAC(fields, secret)
+    E->>U: 3. 302 → :3200/pay?...
+    U->>S: 4. GET /pay
+    S->>S: 5. Verify HMAC
+    S->>U: 6. Confirmation page<br/>(số tiền, balance ví)
+    U->>S: 7. Submit confirm
+    S->>S: 8. Re-verify HMAC,<br/>idempotent dedupe theo merchant:orderId,<br/>db.transaction trừ ví,<br/>audit log
+    S->>U: 9. 302 → :3000/payment/return<br/>?orderId,status,txnId<br/>+ sig=HMAC mới
+    U->>E: 10. GET /payment/return
+    E->>E: 11. Verify HMAC,<br/>UPDATE order SET status='shipping'
+    E->>U: 12. /orders?payment=success
+```
+
+### TOTP enforce per-client (Kịch bản E)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant SP as ShopPay :3200
+    participant KC as Keycloak
+
+    U->>SP: 1. /wallet (no session)
+    SP->>KC: 2. authz request<br/>(client_id=shoppay-app)
+    KC->>KC: 3. Detect client binding override<br/>browser → browser-shoppay flow
+    Note over KC: KHÔNG dùng auth-cookie SSO<br/>Buộc password+TOTP fresh
+
+    KC->>U: 4. Password form
+    U->>KC: 5. password
+    KC->>KC: 6. shoppay-forms flow: REQUIRED OTP
+    alt User chưa có TOTP
+        KC->>U: 7a. QR code setup (userSetupAllowed=true)
+        U->>KC: 8a. Quét QR + nhập code
+    else User có TOTP
+        KC->>U: 7b. Form nhập 6 số
+        U->>KC: 8b. code
+    end
+    KC-->>SP: 9. code → token (with mfa claim)
+    SP->>U: 10. /wallet
+```
+
+---
+
 ## Setup từ 0
 
 Yêu cầu: Docker + Node.js 22 LTS. WSL/Linux/Mac đều OK.
@@ -178,7 +278,18 @@ Mục tiêu: cùng 1 user pool nhưng app `shoppay-app` có policy bảo mật k
 
 > Nếu muốn skip TOTP cho `wallet1` lúc dev: vào Keycloak Admin → Users → wallet1 → Required user actions → xoá `Configure OTP`.
 
-### Kịch bản F — Topup ví + KYC gating
+### Kịch bản F1 — KYC admin approve (full e2e)
+
+Mục tiêu: chứng minh chuỗi action guard 2 bên + Keycloak Admin API call.
+
+1. Login `wallet1` ở :3200 → vào `/kyc` → submit form (CCCD + số bất kỳ).
+2. Logout → login `admin1` (hoặc `finance1`) ở :3200 → top nav xuất hiện thêm 2 link **KYC Review** + **Audit log**.
+3. Vào `/kyc/admin` → thấy hồ sơ pending của `wallet1` → click **Approve**.
+4. ShopPay server action: update DB status → call Keycloak Admin API (`backend-admin-client` token) → POST `/admin/realms/.../users/{wallet1-id}/role-mappings/realm` gán role `kyc-verified` → ghi audit log.
+5. Vào `/audit` → thấy entry `kyc.approve` với metadata `{targetUserId, assignedRole: "kyc-verified"}`.
+6. Logout `admin1`, login lại `wallet1` (cần TOTP) → role mới có hiệu lực → topup > 5tr OK.
+
+### Kịch bản F2 — Topup ví + KYC gating
 
 Mục tiêu: action guard 2 layer (route guard + business rule).
 
@@ -186,6 +297,50 @@ Mục tiêu: action guard 2 layer (route guard + business rule).
 2. Vào `/topup` → nạp 1.000.000 → OK, balance tăng.
 3. Topup 6.000.000 → fail với message "cần `kyc-verified`".
 4. Vào `/kyc` → submit giấy tờ (mock) → admin approve qua Keycloak Admin → assign role `kyc-verified` cho user → logout/login → topup 6.000.000 OK.
+
+### Kịch bản G1 — SAML brokering (Acme Corp → Seller Workspace)
+
+Mục tiêu: chứng minh employee SAML từ "công ty seller" login thẳng vào Seller Workspace, không cần tạo password trên Keycloak chính.
+
+Setup tự động — `acme-corp-realm` đã có sẵn 2 user mẫu (`john.doe` / `jane.smith`, password `Acme@2024`).
+
+1. Mở incognito → http://localhost:3100 → click "Đăng nhập SSO".
+2. Trang Keycloak login có thêm nút **"Sign in with Acme Corp (SAML)"** ở dưới form password.
+3. Click → redirect sang `acme-corp-realm` login page → nhập `john.doe` / `Acme@2024`.
+4. Acme Corp realm tạo SAML assertion → POST về `ecommerce-realm/broker/acme-corp/endpoint`.
+5. Keycloak verify, IdP Mapper auto-assign role `seller` → tạo user trong ecommerce-realm với email `john.doe@acme.com`, role `seller`.
+6. Redirect về :3100 → vào được `/dashboard` ngay.
+
+→ Verify trong Keycloak Admin → realm `ecommerce-realm` → Users → tìm `john.doe@acme.com` → tab "Identity provider links" thấy `acme-corp` đã link.
+
+### Kịch bản G2 — FreeIPA domain controller + LDAP federation
+
+Mục tiêu: dùng cùng 1 password cho login PC (kerberos), SSH, và app web.
+
+Heavy infra — không tự up với `compose up` thường. Chạy có chủ ý:
+
+```bash
+docker compose --profile domain up -d freeipa     # provisioning ~5-10 phút
+docker compose logs -f freeipa                    # đợi "FreeIPA server configured"
+bash scripts/freeipa-seed.sh                      # tạo 2 user demo employee1/employee2
+```
+
+Sau đó wire LDAP federation **manual qua Keycloak Admin Console** (config LDAP qua realm.json không reliable):
+
+1. Vào http://localhost:8080 → realm `ecommerce-realm` → User Federation → **Add Ldap providers**.
+2. Vendor: **Red Hat Directory Server** (FreeIPA dùng 389-ds).
+3. Connection URL: `ldap://freeipa:389`.
+4. Bind type: simple. Bind DN: `uid=admin,cn=users,cn=accounts,dc=example,dc=test`. Bind credential: `Admin@2024`.
+5. Edit mode: READ_ONLY. Users DN: `cn=users,cn=accounts,dc=example,dc=test`. Username LDAP attribute: `uid`. RDN LDAP attribute: `uid`.
+6. Test connection + Test authentication → đều OK → Save.
+7. Tab **Mappers** → đảm bảo `email`, `first name`, `last name` được map.
+8. **Synchronize all users** → Keycloak import 2 user FreeIPA vào realm.
+
+Test: ở :3100 → click "Đăng nhập SSO" → form Keycloak → nhập `employee1` / `Emp@2024` → vào dashboard. Cùng 1 password đó dùng được:
+- `kinit employee1` trong container FreeIPA → nhận Kerberos ticket.
+- SSH vào VM Linux đã join domain (out-of-scope demo này).
+
+> Ghi chú: FreeIPA hostname phải resolve được. Trong Docker Compose mặc định, service `keycloak` thấy `freeipa` qua docker DNS internal — OK. Browser host dùng `localhost:443` để vào FreeIPA Web UI nếu muốn.
 
 ### Kịch bản G — Logout + hết session
 
