@@ -1,85 +1,102 @@
-# TODO — Mở rộng IAM theo hướng Shopee-style (SSO multi-app)
+# TODO — Trạng thái + Hướng đi
 
-> Hệ sinh thái nhiều app dùng chung Keycloak làm IdP trung tâm, có federation IdP ngoài (Google, SAML), MFA, và (tuỳ) domain control cho thiết bị.
+> Snapshot ngắn gọn. Test plan chi tiết xem [README.md#test-plan-đầy-đủ](README.md). Phân tích kiến trúc xem [PLAN.md](PLAN.md).
 
 Phân loại:
-- ✅ **Đã xong** — đã code + verify chạy.
-- 🟡 **Cần external account / heavy infra** — không làm autonomously được.
+- ✅ **Done** — code + verify chạy.
+- 🟡 **Cần input bên ngoài** — code sẵn, đợi credential / heavy infra setup tay.
+- ⏳ **Roadmap** — chưa làm, có thể làm tiếp.
+- ❌ **Skip** — out of scope demo, defer vô thời hạn.
 
 ---
 
-## 1. Hạ tầng & dọn dẹp
+## 1. Hạ tầng
 
-- [x] **Chốt 2/3 use case** → đã chọn: **ShopPay** + **Seller Workspace**.
-- [x] **Tách Postgres** ecommerce vs Keycloak — 2 service `postgres-keycloak`/`postgres-app` + 2 volume riêng + auto-init DB qua [scripts/init-app-dbs.sql](scripts/init-app-dbs.sql).
-- [x] **Đưa secret ra `.env`** — 4 client secret + Postgres password + Keycloak admin password + SMTP + MERCHANT_HMAC_SECRET + GOOGLE_IDP_CLIENT_*. Realm.json chỉ giữ `${VAR}`.
+- ✅ **Tách Postgres** — `postgres-keycloak` (nội bộ) + `postgres-app` (`:5432`), 2 volume riêng, auto-init DB qua [`scripts/init-app-dbs.sql`](scripts/init-app-dbs.sql).
+- ✅ **Secret 100% trong `.env`** — root `.env` quản lý 8 secret, realm.json chỉ giữ `${VAR}`, [`keycloak/entrypoint.sh`](keycloak/entrypoint.sh) sed-resolve trước khi import (multi-realm support).
+- ✅ **Bootstrap idempotent** — [`scripts/bootstrap.sh`](scripts/bootstrap.sh) sinh + sync secret cho root `.env` và 3 app `.env` trong 1 lệnh.
+- ✅ **Reset 1 phát** — [`scripts/reset.sh`](scripts/reset.sh): backup pg_dumpall → wipe 2 volume → import 2 realm → tạo DB → push schema → seed sample data.
+- ✅ **Concurrently runner + warmup** — [`package.json`](package.json) `npm run dev` chạy 3 app + pre-warm route chính qua [`scripts/warmup.sh`](scripts/warmup.sh).
 
-## 2. Cấu hình Keycloak realm
+## 2. Realm & federation
 
-- [~] **Thêm clients**: ✅ `seller-workspace`, ✅ `shoppay-app`; ⏳ `shopfood-app` chỉ cần khi build ShopFood.
-- [~] **Roles**: ✅ `staff-warehouse`, `staff-cs`, `staff-finance`, `wallet-user`, `kyc-verified`, `buyer`, `seller`, `admin`. ⏳ `restaurant-owner`, `rider` cho ShopFood.
-- [x] **Google IdP scaffolding** — realm có entry `identityProviders[google]` với `clientId`/`clientSecret` = `${VAR}`. **Cần bạn**:
-   1. Vào https://console.cloud.google.com/apis/credentials → Create OAuth 2.0 Client ID → type **Web application**.
-   2. Authorized redirect URIs: `http://localhost:8080/realms/ecommerce-realm/broker/google/endpoint`.
-   3. Copy Client ID + Client Secret → paste vào `GOOGLE_IDP_CLIENT_ID` + `GOOGLE_IDP_CLIENT_SECRET` trong root `.env`.
-   4. `bash scripts/reset.sh` để Keycloak import lại với credential mới.
-   5. Test: vào http://localhost:3000 → click "Đăng nhập" → trang Keycloak có thêm nút "Sign in with Google" → click → Google consent → quay về app.
-- [x] **IdentityProviderMapper** — auto-assign role `buyer` cho mọi user login qua Google. (Có thể đổi mapper sang `oidc-role-idp-mapper` để mapping theo claim cụ thể nếu muốn refined.)
-- [x] **SAML 2.0 brokering** cho Seller Workspace — fully automated qua realm thứ 2:
-   - [`keycloak/acme-corp-realm.json`](keycloak/acme-corp-realm.json): mock company IdP với 2 user `john.doe` / `jane.smith` (password `Acme@2024`), 1 SAML client cho `ecommerce-realm` SP.
-   - `ecommerce-realm`: thêm IdP `acme-corp` (providerId=saml) trỏ về `acme-corp-realm` SAML endpoint, mapper auto-assign role `seller`.
-   - `entrypoint.sh` rewrite — import multiple realm files từ `/import-template/*.json`.
-   - Compose mount cả 2 realm files.
-   - Test: kịch bản G1 trong README.
-- [x] **TOTP enforce per-client cho `shoppay-app`** — Authentication Flow `browser-shoppay` (clone của browser, OTP REQUIRED + `userSetupAllowed=true`). Flow này được bind vào `shoppay-app.authenticationFlowBindingOverrides.browser`. Mọi user login ShopPay đều bị bắt setup TOTP nếu chưa có, và phải nhập code mỗi lần login.
-- [x] **Keycloak Groups**: `store-demo-1` với 3 sub-group warehouse/cs/finance + 3 user mẫu.
+- ✅ **3 OIDC client** — `nextjs-app`, `seller-workspace`, `shoppay-app` + service account `backend-admin-client` (cho Admin API).
+- ✅ **8 realm role** — `buyer`, `seller`, `admin`, `staff-warehouse/cs/finance`, `wallet-user`, `kyc-verified`.
+- ✅ **Keycloak Groups** — `store-demo-1` với 3 sub-group (warehouse/cs/finance), 3 user mẫu.
+- ✅ **TOTP enforce per-client cho `shoppay-app`** — flow `browser-shoppay` không có `auth-cookie`, OTP REQUIRED + `userSetupAllowed=true`. Client bind override.
+- ✅ **SAML 2.0 brokering** — realm thứ 2 [`acme-corp-realm`](keycloak/acme-corp-realm.json) làm mock company IdP với 2 user demo. IdP entry `acme-corp` trong ecommerce-realm + 4 mapper (role + firstName + lastName + email).
+- ✅ **Frontchannel logout (SLO)** — 3 client bật `frontchannelLogout`, mỗi app có `/api/auth/frontchannel-logout` endpoint xoá NextAuth cookie.
+- 🟡 **Google IdP brokering** — realm + entrypoint sẵn sàng. Bạn cần đăng ký Google OAuth client (free, 5 phút) → paste `GOOGLE_IDP_CLIENT_ID`/`SECRET` vào root `.env` → `bash scripts/reset.sh`. IdP Mapper auto-assign role `buyer`.
 
-## 3. App code & đồng bộ user
+## 3. App code
 
-- [x] **Bảng `user_profile`** ở 3 app DB (sub, email, name, roles, groups). Sync qua `lib/syncUserProfile.ts` gọi từ NextAuth `jwt` callback.
-- [x] **Scaffold ShopPay** — wallet, transactions, kyc, topup.
-- [x] **Scaffold Seller Workspace** — staff_invitations, store_permissions, audit_logs.
-- [ ] 🟡 **Keycloak Event Listener SPI** — sync user CRUD ngoài luồng login. Heavy Java work, marginal value vì sync 1 chiều ở login đã đủ 90% case. Defer vô thời hạn.
+- ✅ **3 Next.js 16 app** — App Router, NextAuth v4, Drizzle 0.45.
+- ✅ **Cookie name riêng** — 3 app không đè cookie nhau trên `localhost`.
+- ✅ **proxy.ts route guard** — middleware check role; seller-workspace chặn toàn bộ trừ `/denied`, `/api/auth/*`.
+- ✅ **`/denied` page tối giản** — không leak nav menu, route names, hoặc role required.
+- ✅ **`user_profile` cache** — 3 app đều có bảng cache (sub, email, name, roles, groups), sync qua `lib/syncUserProfile.ts` ở NextAuth `jwt` callback.
+- ✅ **Refresh token rotation** — `lib/refreshAccessToken.ts` ở 3 app; `jwt` callback tự refresh khi access token < 60s, set `error=RefreshAccessTokenError` nếu fail.
+- ✅ **Resilient SignIn** — TopBar dùng pattern `signIn(...,{redirect:false})` lấy URL rồi `window.location.href`, fallback `/api/auth/signin` nếu fetch CSRF timeout (Turbopack first-compile).
+- ✅ **HMAC sig helper** — `lib/sig.ts` ở web-app + shoppay (SHA-256, timing-safe compare).
+- ✅ **Audit log** — seller-workspace (staff/store events) + shoppay (wallet.topup / wallet.pay / kyc.approve|reject) với IP tracking.
+- ✅ **Sample data seed** — [`web-app/db/seed.ts`](web-app/db/seed.ts) idempotent, 2 store + 6 product, lookup seller1 sub từ user_profile.
 
 ## 4. Demo flow
 
-- [x] **Cross-app payment ecommerce → ShopPay → return** với HMAC signing 2 chiều, idempotent dedupe theo `merchant:orderId`.
-- [x] **KYC admin approve flow** — `/kyc/admin` page cho admin/staff-finance review pending submissions; approve gọi Keycloak Admin API (client_credentials grant từ `backend-admin-client`) gán role `kyc-verified`. Action được audit log.
-- [x] **ShopPay audit log** — bảng `audit_logs`, helper [`lib/audit.ts`](shoppay/lib/audit.ts), wired vào topup / pay / kyc.approve / kyc.reject. Page `/audit` read-only cho admin/staff-finance.
-- [ ] 🟡 **Seller Workspace SAML SSO** — phụ thuộc 2.4 SAML IdP (xem trên).
+- ✅ **Cross-app payment ecommerce → ShopPay → return** với HMAC 2 chiều, idempotent dedupe theo `merchant:orderId`.
+- ✅ **KYC admin approve full e2e** — `/kyc/admin` cho `admin`/`staff-finance`, gọi Keycloak Admin API gán role `kyc-verified`, audit log.
+- ✅ **Topup gating** — business rule check role `kyc-verified` cho amount > 5tr.
+- ✅ **Admin role mgmt UI** — `/admin/users` ở web-app: chip role click revoke, dropdown thêm role, gọi Admin API qua `/api/admin/users/role`.
 
 ## 5. Domain control (downstream)
 
-- [~] **FreeIPA + LDAP federation** — service đã có trong [docker-compose.yml](docker-compose.yml) profile `domain`, [scripts/freeipa-seed.sh](scripts/freeipa-seed.sh) seed 2 user demo. LDAP federation config phải làm tay qua Keycloak Admin Console (xem README kịch bản G2). Lý do không tự động: LDAP federation provider trong realm.json import dễ break (cần cert chain, password encryption, mapper config phức tạp).
-- [ ] 🟡 **Demo Kerberos SSO end-to-end** — join 1 VM Linux vào domain `EXAMPLE.TEST`, ssh dùng cùng password Keycloak. Out-of-scope cho demo platform này.
+- 🟡 **FreeIPA + LDAP federation** — service trong [docker-compose.yml](docker-compose.yml) profile `domain` (heavy ~5-10 phút provision), [`scripts/freeipa-seed.sh`](scripts/freeipa-seed.sh) tạo 2 user. LDAP federation trong Keycloak phải làm tay qua Admin Console (8 step trong README G3) — config qua realm.json không reliable.
+- ⏳ **VM Linux join domain** + `kinit` Kerberos demo — out-of-scope cho repo này, nhưng workflow đã chứng minh được khi LDAP federation OK.
 
-## 7. Hardening & polish
+## 6. Documentation
 
-- [x] **Refresh token rotation** — NextAuth `jwt` callback check `accessTokenExpires`, gọi Keycloak `/token` với `grant_type=refresh_token` khi sắp hết hạn. Nếu refresh fail (refresh token revoked), set `token.error = "RefreshAccessTokenError"` để client biết. File: [`lib/refreshAccessToken.ts`](web-app/lib/refreshAccessToken.ts) ở cả 3 app.
-- [x] **Frontchannel logout (SLO)** — 3 client có `frontchannelLogout=true` + `frontchannel.logout.url`; mỗi app có `/api/auth/frontchannel-logout` route xoá NextAuth session cookie. Khi user logout 1 app → Keycloak load iframe các app khác → cookie bị clear → app đó cũng signout.
-- [x] **`/admin/users` UI** — list user + role chips clickable (revoke) + dropdown thêm role. POST `/api/admin/users/role` gọi Keycloak Admin API. Chỉ user có role `admin` access được.
-- [x] **SAML attribute mappers** — firstName/lastName/email từ acme-corp SAML assertion → user attributes trong ecommerce-realm.
-- [x] **Sample data seed** — [`web-app/db/seed.ts`](web-app/db/seed.ts) tạo 2 store + 6 product. Tự attach owner = sub của seller1 nếu user_profile đã có; hoặc placeholder + rerun sau.
-
-## 6. Đóng gói & báo cáo
-
-- [x] **Mermaid architecture diagram** trong README — upstream IdP → Keycloak broker → downstream apps + 2 Postgres + cross-app payment.
-- [x] **README e2e** với 7 kịch bản test A–G.
-- [x] **PLAN.md** — phân tích 1.3 (tách secret) + PLAN-NEXT (TOTP/SAML/Google/Mermaid).
+- ✅ **README** với mermaid component diagram + 4 sequence diagram + 12 test scenario A-L + troubleshooting + roadmap 4 nhóm.
+- ✅ **PLAN.md** giải thích 1.3 (tách secret) + PLAN-NEXT (TOTP/SAML/Google/Mermaid).
+- ✅ **todo.md** (file này) snapshot trạng thái.
 
 ---
 
-## Bilan
+## ⏳ Roadmap (chưa làm, sắp xếp theo độ khó)
 
-**Đã xong autonomous (nhóm này không cần bạn làm gì)**:
-1.2, 1.3, 2.5 (TOTP per-client), 2.6 (Google IdP mapper), 3.1, 4.1, 6.1, 6.2, PLAN.md
-+ Google IdP scaffolding (realm + env + entrypoint sẵn sàng).
+### Production hardening (1-2 tuần)
+- HTTPS + reverse proxy thật (Let's Encrypt), cookie `secure: true`.
+- Secrets manager (Vault / Doppler / AWS SM) thay `.env`.
+- Postgres backup tự động + restore drill.
+- Drizzle migration files versioned (thay `db:push` auto-detect).
+- Test coverage: unit + integration cho server actions, HMAC, auth flow.
+- Observability: Keycloak metrics → Prometheus, logs → Loki.
 
-**Cần bạn cung cấp credential rồi mới test được**:
-- 2.3 Google IdP — 5 phút đăng ký Google Cloud OAuth client.
+### IAM nâng cao (2-3 tuần)
+- **Authorization Services** — chuyển từ RBAC tự code sang policy declarative trong Keycloak.
+- **Step-up auth `acr_values`** — TOTP chỉ khi sensitive op, không enforce mỗi login.
+- **WebAuthn / Passkey** — passwordless thay TOTP.
+- **Account linking auto-by-email** — silent link khi Google email match form user.
+- **Backchannel logout chuẩn** — DB-backed revoked sid list, signed `logout_token` verify (vượt frontchannel iframe limitation).
+- **Event Listener SPI** — Java jar sync user CRUD ngoài luồng login.
 
-**Cần làm tay qua Admin Console (không thể cứng hoá realm JSON)**:
-- 2.4 SAML brokering — 2-3h, nhiều step UI.
+### Mở rộng platform (1-2 tháng)
+- **ShopFood app** — restaurant marketplace, roles `restaurant-owner`/`rider`, demo SSO 4 app.
+- **Mobile app via OIDC PKCE** — React Native / Flutter, public client.
+- **B2B SAML thật** — Azure AD / Okta thay mock acme-corp.
+- **Multi-domain LDAP federation** — Keycloak hub cho N enterprise.
+- **Audit data warehouse** — ClickHouse + Grafana dashboard.
+- **i18n** — VI/EN/JP/KO cho cả Keycloak login pages + app.
 
-**Defer / scope creep**:
-- 3.4 Event Listener SPI, 5.x FreeIPA, ShopFood app.
+### Báo cáo / luận văn
+- Slide A0 từ Mermaid hiện có.
+- k6 / wrk load test → throughput benchmark.
+- Feature matrix Keycloak vs Auth0 vs Okta vs Cognito.
+- STRIDE threat model.
+
+---
+
+## ❌ Skip
+
+- **ShopFood app trong phase này** — scope creep, không thêm gì mới về IAM bản chất.
+- **Step-up acr_values trong demo này** — `shoppay-forms` flow đã enforce TOTP mỗi login, step-up redundant. Roadmap để thay thế khi cần UX tốt hơn.
+- **VM join domain end-to-end** — workflow đã clear khi LDAP OK, không cần build thật trong repo demo.

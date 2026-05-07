@@ -1,406 +1,253 @@
-# PLAN — Tách secret ra `.env` (todo 1.3)
+# PLAN — Phân tích kiến trúc & Quyết định thiết kế
 
-> Mục tiêu: loại bỏ mọi `client_secret`, password, admin credential khỏi file commit (`docker-compose.yml`, `keycloak/ecommerce-realm.json`, các `.env.example`). Đẩy hết về 1 file `.env` ở root (không commit) + Keycloak resolve placeholder lúc import realm.
+> Đồ án mô phỏng hệ sinh thái Shopee/ShopeeFood/ShopeePay với Keycloak làm IdP trung tâm. File này KHÔNG kể lại hướng dẫn — đó nằm ở [README.md](README.md). Đây là **why** đằng sau các quyết định kiến trúc, để người đọc hiểu trade-off và replicate được cho dự án thật.
+
+Mục lục:
+1. [Tách secret ra `.env`](#1-tách-secret-ra-env)
+2. [TOTP enforce per-client](#2-totp-enforce-per-client-cho-shoppay)
+3. [SAML brokering qua realm thứ 2](#3-saml-brokering-qua-realm-thứ-2)
+4. [Cross-app payment với HMAC](#4-cross-app-payment-với-hmac-2-chiều)
+5. [Refresh token rotation](#5-refresh-token-rotation-trong-nextauth)
+6. [Frontchannel logout vs Backchannel](#6-frontchannel-logout-vs-backchannel)
+7. [Sync `user_profile` vs Event Listener SPI](#7-sync-user_profile-vs-event-listener-spi)
+8. [Tách Postgres thành 2 instance](#8-tách-postgres-thành-2-instance)
 
 ---
 
-## 1. Bối cảnh & lý do
+## 1. Tách secret ra `.env`
 
-### 1.1. Vì sao việc này phải làm trước các todo khác
+### Vấn đề
+Realm.json export từ Keycloak Admin Console mặc định nhúng plaintext: client secrets, admin password, SMTP password, IdP credentials. Commit nguyên xi vào git = leak hàng loạt credential.
 
-Các todo còn lại (Google IdP, SAML brokering, FreeIPA federation, Event Listener SPI…) đều **thêm secret mới** vào hệ thống: client secret cho Google, signing key cho SAML, bind-DN password cho LDAP. Nếu chưa có pattern chuẩn để chứa secret, mỗi lần thêm 1 IdP là thêm 1 chỗ phải hardcode → càng để lâu càng khó dọn. Làm 1.3 trước = đặt nền cho mọi tích hợp sau.
+### Quyết định
+- Mọi secret → root `.env` (gitignore'd).
+- Realm JSON chỉ giữ `${VAR_NAME}` placeholder.
+- Custom entrypoint sed-replace placeholder TRƯỚC khi Keycloak parse → secrets được inject lúc runtime, không bao giờ ở rest trên disk dạng plaintext (trừ trong DB Keycloak sau import).
 
-### 1.2. Vấn đề cụ thể đang tồn tại trong repo
+### Kiến thức cốt lõi
+- **OAuth2 `client_secret`** là bearer credential. Leak = ai cũng đổi auth code → access token. Với client `confidential` có service account và quyền `realm-admin` (như `backend-admin-client`), leak ngang ngửa root password.
+- **Twelve-Factor App III**: config vs code. Config = thứ thay đổi giữa môi trường (dev/staging/prod). Secret thuộc config → không bao giờ hard-code.
+- **Keycloak placeholder substitution native** không reliable cross-version. Tự sed bulletproof.
 
-| File | Dòng | Vấn đề |
+### Trade-off
+- ✅ Repo public không leak secret.
+- ✅ Rotate secret = sửa 1 dòng `.env`.
+- ❌ Sau import lần đầu, secret nằm trong DB Keycloak — rotate phải wipe + reimport (hoặc đổi qua Admin Console).
+- 🔄 **Bước tiếp**: dùng Vault / Doppler / AWS Secrets Manager + dynamic credentials thay file `.env`. `.env` là bước 1 hợp lý cho dev, không phải production-grade.
+
+---
+
+## 2. TOTP enforce per-client cho ShopPay
+
+### Vấn đề
+ShopPay là ví điện tử — phải MFA. Nhưng bắt MFA toàn realm thì user mua hàng ecommerce cũng bị bắt → UX tệ. Cần **policy isolation theo app** dù dùng chung user pool.
+
+### Quyết định
+1. Tạo Authentication Flow `browser-shoppay`:
+   - **KHÔNG có `auth-cookie`** → silent SSO bị bypass cho client này.
+   - Subflow `shoppay-forms` REQUIRED: `auth-username-password-form` REQUIRED + `auth-otp-form` REQUIRED + `userSetupAllowed=true`.
+2. Bind flow đó vào client `shoppay-app` qua `authenticationFlowBindingOverrides.browser`.
+3. Các client khác (`nextjs-app`, `seller-workspace`) vẫn dùng flow `browser` mặc định → silent SSO + không TOTP.
+
+### Kiến thức cốt lõi
+- **Authentication Flow**: Keycloak modeled login như cây các "execution" với requirement `REQUIRED / ALTERNATIVE / CONDITIONAL / DISABLED`. ALTERNATIVE = cần ít nhất 1 ăn; REQUIRED = phải ăn.
+- **Client binding override**: 1 client có thể tự chọn flow riêng cho `browser`/`direct grant`/`reset credentials`/`docker auth` thay vì dùng default realm.
+- **`userSetupAllowed=true`**: nếu user chưa có credential (TOTP), authenticator triggers required action `CONFIGURE_TOTP` thay vì fail. Đây là magic bít cho UX setup-on-first-login.
+
+### Trade-off đã cân nhắc
+| Approach | Pros | Cons |
 |---|---|---|
-| `keycloak/ecommerce-realm.json` | 805 | `backend-admin-client` secret đang là `"**********"` (có vẻ đã bị che lúc export, nhưng nếu rotate lại thì sẽ ghi giá trị thật vào file commit) |
-| `keycloak/ecommerce-realm.json` | 983 | `seller-workspace` client secret = `"seller-workspace-secret"` plaintext |
-| `keycloak/ecommerce-realm.json` | 1043 | `shoppay-app` client secret = `"shoppay-secret"` plaintext |
-| `docker-compose.yml` | 7 | `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}` — default password yếu được commit |
-| `docker-compose.yml` | 22 | `KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}` — admin/admin được commit |
-| `seller-workspace/.env.example` | — | Chứa `KEYCLOAK_CLIENT_SECRET=seller-workspace-secret` (giá trị thật, không phải placeholder) |
-| `shoppay/.env.example` | — | Tương tự, chứa `shoppay-secret` |
-| `web-app/.env.example` | — | `KEYCLOAK_CLIENT_SECRET=changeme-generate-random-secret` (đúng quy ước, giữ nguyên) |
+| **Bind flow per-client (đã chọn)** | Policy chỉ apply cho client cần | OTP add như user-level required action → bám user, mọi client login sau bị hỏi |
+| Step-up `acr_values` | Per-action MFA, UX best | Phức tạp setup, cần app-side code phức tạp |
+| Realm-level `verifyEmail` style | Đơn giản | Apply toàn realm, không isolate được |
+| Force `prompt=login` ở app | Không cần Keycloak setup | Re-auth password mỗi lần, UX kém |
 
-### 1.3. Tác hại nếu không sửa
+### Trade-off thực tế phải sống chung
+TOTP enforce per-client KHÔNG hoàn toàn isolate: 1 khi user setup TOTP cho ShopPay, required action `CONFIGURE_TOTP` đã hoàn thành, OTP credential bám user → các flow khác có check `Conditional 2FA` cũng có thể trigger. Đây không phải bug, là Keycloak design (credential = user attribute, không phải client attribute).
 
-1. **Repo public/leak = ai cũng impersonate app được.** Có `client_id` (public) + `client_secret` (lộ) → gọi `/token` endpoint của Keycloak với `grant_type=authorization_code` để lấy access token. Đặc biệt nguy hiểm với `backend-admin-client` (line 795–810): client này có `serviceAccountsEnabled` và thường được gán role `realm-admin` — leak secret = leak quyền admin realm.
-2. **Không rotate được.** Đổi secret phải sửa cả `.env` và `realm.json` rồi commit → vòng commit history còn nguyên giá trị cũ.
-3. **Không phân biệt dev/staging/prod.** 1 file `realm.json` = 1 bộ secret cố định. Lên prod phải maintain 1 fork của file → drift.
-4. **`.env.example` đang leak giá trị thật** = anti-pattern. File này được commit, nên phải là template, không phải bản sao của `.env`.
+### 🔄 Bước tiếp
+Step-up auth qua `acr_values=2` là solution chuẩn ngành: app chỉ request MFA khi sensitive op, Keycloak prompt OTP cho session đó, không persist user-level required action. Cần custom Authentication Flow trả `acr` claim khác nhau theo path đi qua + NextAuth track session AAL.
 
 ---
 
-## 2. Kiến thức nền
+## 3. SAML brokering qua realm thứ 2
 
-### 2.1. OAuth2/OIDC client_secret là gì
+### Vấn đề
+Demo Identity Brokering pattern thật: nhân viên seller login bằng "tài khoản công ty" (Azure AD / Okta / Google Workspace SAML) thay vì tự tạo password trên Keycloak chính. Điều kiện: KHÔNG có Azure / Okta thật để test.
 
-Trong OIDC Authorization Code flow:
+### Quyết định
+Tạo realm thứ 2 (`acme-corp-realm`) trong cùng Keycloak instance, đóng vai **mock company IdP**. Realm chính (`ecommerce-realm`) làm SAML SP (Service Provider) brokering tới realm phụ.
 
 ```
-Browser ── (1) authz request ──> Keycloak
-        <─ (2) code ──────────
-Browser ── (3) code ──> Next.js server
-Next.js  ── (4) code + client_id + client_secret ──> Keycloak /token
-         <─ (5) access_token + id_token ────────────
+[browser] → seller-workspace → ecommerce-realm (broker)
+                                      ↓ SAML
+                               acme-corp-realm (IdP)
+                                      ↓
+                          john.doe / Acme@2024
 ```
 
-`client_secret` xuất hiện ở bước (4) — Next.js server xác thực với Keycloak rằng "tao đúng là app `seller-workspace`, không phải kẻ chặn code". Vì `client_secret` không bao giờ rời server-side, nó là credential mạnh. Leak = mất authenticity của toàn bộ luồng.
+### Kiến thức cốt lõi
+- **Identity Brokering**: Keycloak vừa là IdP (cho app) vừa là RP/SP (cho upstream IdP). App KHÔNG biết Google/SAML/LDAP tồn tại; Keycloak abstract đi.
+- **First Broker Login Flow**: khi user lần đầu đến từ external IdP, Keycloak chạy flow này: review profile → create user / link existing → apply role mappers.
+- **SAML SP-IdP relationship**: SP (ecommerce-realm) có entity ID = `http://localhost:8080/realms/ecommerce-realm`, redirect URL = `/broker/acme-corp/endpoint`. IdP (acme-corp-realm) có 1 SAML client với `clientId` = SP's entityId, `redirectUris` includes broker endpoint.
+- **NameID format**: `emailAddress` để map `subject` của SAML assertion → `email` của Keycloak user.
 
-Client `public` (SPA, mobile) không có secret và phải dùng PKCE thay thế. Tất cả 3 app trong dự án này là `confidential` (Next.js render server-side) → có secret.
+### Trade-off
+- ✅ Hoàn toàn tự động hoá được, không phụ thuộc account ngoài.
+- ✅ Demo cùng Keycloak vừa làm OIDC IdP (cho buyer login form) vừa làm SAML SP (cho enterprise) — chứng minh versatile.
+- ❌ KHÔNG ký assertion (`signAssertions=false`) → tránh chicken-and-egg về cert sync giữa 2 realm. Production phải sign + verify với cert chain thật.
+- ❌ Mock realm nằm cùng Keycloak instance → không reflect setup thật (2 organizations khác nhau, 2 instance khác nhau, network giữa cách nhau qua internet).
 
-### 2.2. Keycloak environment variable substitution
-
-Keycloak (≥ v17, Quarkus distribution) hỗ trợ replace `${VARNAME}` trong realm JSON khi import qua flag `--import-realm`. Quy tắc:
-
-- Cú pháp: `"key": "${ENV_VAR_NAME}"` hoặc `"${ENV_VAR_NAME:default_value}"`.
-- Biến phải tồn tại trong env của process Keycloak (truyền qua `environment:` trong compose).
-- Replace xảy ra **lúc parse JSON** ngay trước khi tạo realm trong DB. Sau khi import xong, giá trị thật được lưu trong DB Postgres của Keycloak.
-- Nghĩa là: **rotate secret = đổi `.env` + xoá DB Keycloak + restart.** Hoặc đổi qua Admin Console (không động vào file).
-
-Hệ quả: chiến lược đúng là dùng env substitution **chỉ cho lần bootstrap đầu tiên**; sau đó secret sống trong DB Keycloak. Khi muốn rotate, đổi qua Admin Console (Clients → Credentials → Regenerate) rồi cập nhật `.env` của app tương ứng.
-
-### 2.3. Docker Compose & file `.env`
-
-- Compose tự động đọc file `.env` ở **cùng thư mục với `docker-compose.yml`**.
-- `${VAR}` trong compose YAML được thay từ file `.env` đó (hoặc shell env, shell ưu tiên cao hơn).
-- `environment:` truyền tiếp vào container. Container chỉ thấy biến nào được khai báo ở đây.
-- File `.env` đã nằm trong `.gitignore` (đã verify ở [.gitignore](.gitignore)) → an toàn.
-
-### 2.4. Quy ước `.env` vs `.env.example`
-
-- `.env` — giá trị thật, **không commit**, mỗi dev/server tự tạo.
-- `.env.example` — template, **commit**, chứa tên biến và placeholder mô tả (`changeme`, `<paste-from-keycloak>`, …). Dev mới clone repo chạy `cp .env.example .env` rồi điền.
-- Không bao giờ để giá trị thật của secret trong `.env.example`.
-
-### 2.5. Twelve-Factor — Config
-
-> "An app's config is everything that is likely to vary between deploys. […] Apps sometimes store config as constants in the code. This is a violation of twelve-factor, which requires strict separation of config from code."
-
-Secret = config. Code = không secret. Quy tắc đơn giản: nếu xem repo public mà bạn rùng mình → đó là config, phải đẩy ra ngoài.
+### 🔄 Bước tiếp
+Replace `acme-corp-realm` mock bằng integration thật với 1 trong:
+- Azure AD Enterprise Application (free tier).
+- Auth0 / Okta dev tenant.
+- Self-host realm thứ 2 trên VPS riêng để mô phỏng cross-network.
 
 ---
 
-## 3. Phương án thực hiện — chi tiết end-to-end
+## 4. Cross-app payment với HMAC 2 chiều
 
-### 3.1. Tạo file `.env` ở root repo
+### Vấn đề
+ecommerce checkout cần redirect user sang ShopPay để trừ ví, sau đó callback về với status. 2 service riêng biệt — query string trong URL có thể bị user tamper. Cần authenticate request 2 chiều mà KHÔNG dùng OIDC token (vì token có scope app-specific, dài, không phù hợp redirect).
 
-Tạo `D:\ecommerce-platform\.env` (đã trong `.gitignore`):
+### Quyết định
+HMAC-SHA256 với shared secret `MERCHANT_HMAC_SECRET`:
+- **Outbound** (ecommerce → ShopPay): `?merchant&orderId&amount&returnUrl&nonce` + `sig = HMAC(sorted_fields, secret)`.
+- **Return** (ShopPay → ecommerce): `?orderId&status&txnId` + `sig = HMAC(those_fields, secret)`.
+- ShopPay re-verify sig trên server action (chống user sửa form), idempotent dedupe theo `external_ref = "merchant:orderId"`.
 
-```dotenv
-# === Postgres (shared) ===
-POSTGRES_DB=keycloak
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=<random-strong-pw>
+### Kiến thức cốt lõi
+- **HMAC vs raw hash**: HMAC immune length-extension (xem PLAN cũ section TOTP/SHA-1).
+- **Sort fields trước khi hash**: 2 bên ký cùng input. Map iteration order không guaranteed.
+- **`crypto.timingSafeEqual`**: chống timing attack khi compare sig.
+- **Nonce**: chống replay attack — server có thể track nonce đã dùng (TODO chưa wire).
+- **Idempotency**: thanh toán phải idempotent qua dedupe key (`merchant:orderId`) — user F5 không trừ ví 2 lần.
 
-# === Keycloak admin ===
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=<random-strong-pw>
+### Trade-off
+- ✅ Đơn giản, không phụ thuộc OIDC token, share giữa 2 service.
+- ✅ Verify ở cả page render (UX warning) lẫn server action (security).
+- ❌ Shared secret = symmetric → cả 2 bên đều có thể giả forge. Production B2B PSP dùng RSA signature (PSP có private key, merchant verify với public).
+- ❌ Nonce chưa được track (state-less) → vẫn có thể replay trong window.
 
-# === Keycloak client secrets (resolve trong realm.json khi import) ===
-NEXTJS_APP_CLIENT_SECRET=<random-32-byte-hex>
-SELLER_WORKSPACE_CLIENT_SECRET=<random-32-byte-hex>
-SHOPPAY_CLIENT_SECRET=<random-32-byte-hex>
-BACKEND_ADMIN_CLIENT_SECRET=<random-32-byte-hex>
-```
-
-Cách sinh giá trị:
-```bash
-openssl rand -hex 32
-# hoặc
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### 3.2. Tạo `.env.example` ở root (commit)
-
-```dotenv
-POSTGRES_DB=keycloak
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=changeme-generate-with-openssl-rand-hex-32
-
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=changeme-generate-with-openssl-rand-hex-32
-
-NEXTJS_APP_CLIENT_SECRET=changeme-generate-with-openssl-rand-hex-32
-SELLER_WORKSPACE_CLIENT_SECRET=changeme-generate-with-openssl-rand-hex-32
-SHOPPAY_CLIENT_SECRET=changeme-generate-with-openssl-rand-hex-32
-BACKEND_ADMIN_CLIENT_SECRET=changeme-generate-with-openssl-rand-hex-32
-```
-
-### 3.3. Sửa `docker-compose.yml`
-
-Bỏ default values yếu để compose fail loud nếu thiếu biến:
-
-```yaml
-services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports: ["5432:5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:latest
-    command: start-dev --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      KC_DB_USERNAME: ${POSTGRES_USER}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      # Đẩy biến vào để realm.json resolve được
-      NEXTJS_APP_CLIENT_SECRET: ${NEXTJS_APP_CLIENT_SECRET}
-      SELLER_WORKSPACE_CLIENT_SECRET: ${SELLER_WORKSPACE_CLIENT_SECRET}
-      SHOPPAY_CLIENT_SECRET: ${SHOPPAY_CLIENT_SECRET}
-      BACKEND_ADMIN_CLIENT_SECRET: ${BACKEND_ADMIN_CLIENT_SECRET}
-    ports: ["8080:8080"]
-    volumes:
-      - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import/realm.json
-    depends_on: [postgres]
-  # ...nginx giữ nguyên
-```
-
-**Lý do bỏ `:-default`:** với secret, fail-fast tốt hơn fallback ngầm. Nếu dev quên tạo `.env`, compose báo lỗi rõ ràng, không boot lên với password `admin` rồi bị quên.
-
-### 3.4. Sửa `keycloak/ecommerce-realm.json`
-
-3 chỗ cần đổi (đã xác định lúc khảo sát):
-
-```diff
-  "clientId": "backend-admin-client",
-  ...
-- "secret": "**********",
-+ "secret": "${BACKEND_ADMIN_CLIENT_SECRET}",
-```
-
-```diff
-  "clientId": "seller-workspace",
-  ...
-- "secret": "seller-workspace-secret",
-+ "secret": "${SELLER_WORKSPACE_CLIENT_SECRET}",
-```
-
-```diff
-  "clientId": "shoppay-app",
-  ...
-- "secret": "shoppay-secret",
-+ "secret": "${SHOPPAY_CLIENT_SECRET}",
-```
-
-Kiểm tra `nextjs-app` (line 896): hiện tại không có field `"secret"` trong block đó (Keycloak có thể đã dùng generated secret lưu trong DB). Sau khi rebuild, ta sẽ thêm:
-
-```diff
-  "clientId": "nextjs-app",
-  "clientAuthenticatorType": "client-secret",
-+ "secret": "${NEXTJS_APP_CLIENT_SECRET}",
-```
-
-### 3.5. Cập nhật `.env.example` của 3 app
-
-Quan trọng: 3 app vẫn đọc secret từ **`.env` của riêng nó** (không phải `.env` root) vì NextAuth chạy trong Next.js process, không phải Keycloak process. Nhưng giá trị phải **trùng** với cái Keycloak đã import.
-
-`web-app/.env.example`:
-```dotenv
-DATABASE_URL=postgresql://admin:password@localhost:5432/ecommerce
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=changeme-openssl-rand-hex-32
-KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm
-KEYCLOAK_CLIENT_ID=nextjs-app
-KEYCLOAK_CLIENT_SECRET=<paste-NEXTJS_APP_CLIENT_SECRET-from-root-.env>
-```
-
-`seller-workspace/.env.example`:
-```dotenv
-DATABASE_URL=postgres://admin:password@localhost:5432/seller_workspace
-NEXTAUTH_URL=http://localhost:3100
-NEXTAUTH_SECRET=changeme-openssl-rand-hex-32
-KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm
-KEYCLOAK_CLIENT_ID=seller-workspace
-KEYCLOAK_CLIENT_SECRET=<paste-SELLER_WORKSPACE_CLIENT_SECRET-from-root-.env>
-```
-
-`shoppay/.env.example`: tương tự, dùng `SHOPPAY_CLIENT_SECRET`.
-
-### 3.6. Cập nhật `.env` thật của 3 app
-
-Copy giá trị từ root `.env` sang `KEYCLOAK_CLIENT_SECRET` của từng app `.env`. Đây là chỗ duy nhất giá trị bị duplicate, nhưng cả 2 đều không commit → chấp nhận được.
-
-(Cải tiến tương lai: viết script `scripts/sync-secrets.sh` đọc root `.env` rồi sinh ra `.env` của 3 app — không cần làm bây giờ.)
-
-### 3.7. Bootstrap lại Keycloak
-
-Vì secret đã được lưu vào DB Keycloak từ lần import trước, phải wipe DB để import lại với giá trị mới:
-
-```bash
-docker compose down
-docker volume rm ecommerce-platform_postgres_data    # xoá DB Keycloak + ecommerce nếu chung volume
-# Hoặc, nếu đã tách volume (todo 1.2): chỉ xoá volume Keycloak
-docker compose up -d
-```
-
-> **Cảnh báo:** thao tác này xoá data ecommerce (orders, users app-side). Nếu chưa làm todo 1.2 (tách Postgres), nên backup trước:
-> ```bash
-> docker exec -t <postgres-container> pg_dump -U admin ecommerce > backup-ecommerce.sql
-> ```
-
-### 3.8. Verify
-
-Sau khi up:
-
-1. Truy cập `http://localhost:8080` → login admin với `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` từ `.env`.
-2. Clients → `seller-workspace` → tab Credentials → copy "Client secret" → so sánh với `SELLER_WORKSPACE_CLIENT_SECRET` trong `.env`. Phải khớp.
-3. Tương tự `shoppay-app`, `nextjs-app`, `backend-admin-client`.
-4. Chạy 3 app:
-   ```bash
-   cd web-app && npm run dev          # 3000
-   cd seller-workspace && npm run dev  # 3100
-   cd shoppay && npm run dev           # 3200
-   ```
-5. Login từng app → nếu thành công và không có lỗi `invalid_client` trong log Keycloak → DONE.
-
-### 3.9. Kiểm tra lần cuối: secret KHÔNG còn trong git
-
-```bash
-git grep -n "seller-workspace-secret\|shoppay-secret\|hehe dont steal"
-# phải trả về 0 dòng
-
-git status
-# .env, web-app/.env, seller-workspace/.env, shoppay/.env phải ở "untracked"
-```
+### 🔄 Bước tiếp
+- Lưu nonce đã dùng vào DB → reject duplicate.
+- Đổi sang RSA-SHA256 cho "real PSP" pattern (ShopPay private key, ecommerce verify).
+- Idle timeout cho payment URL (`exp` claim trong sig payload).
 
 ---
 
-## 4. Định nghĩa "xong"
+## 5. Refresh token rotation trong NextAuth
 
-- [ ] `.env` root tồn tại, chứa 4 client secret + admin password ngẫu nhiên 32-byte.
-- [ ] `.env.example` root được commit, chỉ có placeholder.
-- [ ] `docker-compose.yml` không còn default password yếu.
-- [ ] `keycloak/ecommerce-realm.json` không còn plaintext secret nào (grep `"secret":` trả về toàn `${VAR}`).
-- [ ] 3 app `.env.example` thay giá trị thật bằng placeholder.
-- [ ] Wipe + reimport realm thành công, login 3 app OK.
-- [ ] `git grep` không tìm thấy secret cũ.
+### Vấn đề
+Keycloak default access token TTL = 5 phút. NextAuth không tự refresh. Sau 5 phút user chưa logout, mọi request đến Keycloak Admin API (KYC approve, role mgmt) sẽ fail vì token expired.
 
----
+### Quyết định
+Trong `jwt` callback của NextAuth, kiểm tra `Date.now() > token.accessTokenExpires - 60s` → gọi Keycloak `/token` với `grant_type=refresh_token` + `refresh_token` cũ → cập nhật token mới + nonce nếu Keycloak rotate refresh token.
 
-## 5. Rủi ro & cách giảm thiểu
-
-| Rủi ro | Cách xử lý |
-|---|---|
-| Quên đồng bộ giá trị giữa root `.env` và app `.env` → `invalid_client` | Verify ở bước 3.8.2 trước khi chạy app |
-| Wipe volume làm mất data ecommerce dev | Backup pg_dump trước (3.7) hoặc làm todo 1.2 (tách volume) trước |
-| `${VAR}` không resolve nếu Keycloak version cũ | Đang dùng `quay.io/keycloak/keycloak:latest` → OK. Nếu pin version cũ < 17, phải đổi |
-| Secret cũ vẫn còn trong git history | Sau khi merge, chạy `git filter-repo` hoặc rotate lần nữa. Trong demo project chấp nhận được |
-| Dev mới clone repo không biết tạo `.env` | README.md phần Setup phải nói: "copy `.env.example` → `.env`, sinh secret mới, làm tương tự cho 3 app/" |
-
----
-
-## 6. Sau khi xong — bước tiếp theo
-
-Mở đường cho:
-- **Todo 3.1** — bảng `user_profile`: schema-only, không động secret, làm rất nhanh sau khi hạ tầng sạch.
-- **Todo 1.2** — tách Postgres ecommerce/keycloak: giờ đã có `.env` chuẩn, chỉ cần thêm service `postgres-app` với `POSTGRES_APP_PASSWORD` riêng.
-- **Todo 2.3 (Google IdP)** — secret Google OAuth client đẩy thẳng vào root `.env` theo cùng pattern: `GOOGLE_IDP_CLIENT_SECRET=...`, reference trong realm.json bằng `${GOOGLE_IDP_CLIENT_SECRET}`.
-
-Pattern đã thiết lập ở 1.3 sẽ tái sử dụng cho mọi tích hợp về sau.
-
----
-
-# PLAN-NEXT — Federation + Step-up MFA + Documentation
-
-> Sau khi xong 1.2, 1.3, 3.1, 4.1: bước tiếp tập trung vào **federation** (login bằng IdP ngoài) và **policy bảo mật khác biệt theo app** — đây là 2 thứ định nghĩa "Keycloak làm IdP trung tâm" thực sự.
-
-## Phân tích lợi ích
-
-### A. Google IdP brokering (todo 2.3 + 2.6)
-
-**Kiến trúc**:
-```
-User → app (RP) → Keycloak (broker) → Google (real IdP)
-                       ↑
-                  user_profile cache
+```ts
+const expires = token.accessTokenExpires as number | undefined;
+if (expires && Date.now() < expires - 60_000) return token;
+return await refreshAccessToken(token);
 ```
 
-Keycloak là **broker** — vừa đóng vai trò RP (quan hệ với Google), vừa đóng vai trò IdP (quan hệ với app). App KHÔNG biết Google tồn tại; app chỉ thấy 1 OIDC provider duy nhất là Keycloak. Đây là điểm mạnh của broker pattern: thêm/xoá IdP ngoài không động đến app code.
+Nếu refresh fail (refresh token revoked / Keycloak session đã chết) → set `token.error = "RefreshAccessTokenError"`. Client-side thấy error → force re-login.
 
-**Lợi ích cụ thể**:
-1. Onboarding friction giảm: user click 1 nút "Login with Google" thay vì điền form. Studies từ Auth0/Okta: tỉ lệ hoàn tất signup tăng 30-70% với social login.
-2. Password do Google quản lý — Google có 2FA, fraud detection, phishing protection xịn hơn bất kỳ team nhỏ nào tự làm.
-3. Email đã verified mặc định (Google không cho dùng email chưa verify) → có thể auto-trust và gán role ngay.
-4. Demo: Identity Brokering — Keycloak mediator giữa N upstream IdP (Google, Facebook, GitHub, SAML, LDAP) và M downstream app.
+### Kiến thức cốt lõi
+- **Access token vs refresh token**: access ngắn hạn (5 min) cho API call. Refresh dài hạn (30 min default) chỉ để xin access mới — KHÔNG đi chung mọi request.
+- **Refresh token rotation**: Keycloak có thể trả refresh token mới mỗi lần refresh (chống reuse), nếu config `revoke_refresh_token=true` ở client.
+- **NextAuth JWT cookie**: stateless, không có DB backing. Để invalidate session thật sự (không phải chỉ chờ token expire) cần custom logic — dùng `events.signOut` gọi Keycloak `/logout`, hoặc backchannel.
 
-**Effort**: 30 phút — gồm 5 phút đăng ký Google OAuth client ở [console.cloud.google.com](https://console.cloud.google.com/apis/credentials).
-
-### B. SAML 2.0 brokering (todo 2.4)
-
-**Use case**: nhân viên seller login bằng tài khoản công ty của họ (Azure AD / Okta / Google Workspace SAML) thay vì tự tạo password trên Seller Workspace.
-
-**Kiến trúc**: tương tự Google IdP nhưng protocol SAML thay vì OIDC.
-```
-Staff → seller-workspace → Keycloak (SAML SP) → Company IdP (SAML IdP)
-```
-
-**Lợi ích cụ thể**:
-1. **Enterprise-grade**: SAML là chuẩn ngành cho B2B SSO. Bank, gov, healthcare hầu như chỉ chấp nhận SAML.
-2. **Provisioning tự động**: khi nhân viên rời công ty, IT disable account ở AD → user mất quyền vào Seller Workspace ngay (vì không SAML auth được nữa). Không cần app maintain account.
-3. **Demo cùng Keycloak làm cả OIDC IdP (cho buyer) lẫn SAML SP (cho enterprise staff)** → minh hoạ Keycloak versatile.
-
-**Cách implement không cần external**: tạo realm thứ 2 trong cùng Keycloak instance làm "company IdP". Realm chính (ecommerce-realm) broker tới realm phụ qua SAML metadata. Hoàn toàn tự động hoá được.
-
-**Effort**: 2h — tạo realm `acme-corp-realm`, export SAML metadata, import vào ecommerce-realm.
-
-### C. TOTP enforce per-client (todo 2.5)
-
-**Vấn đề hiện tại**: chỉ user `wallet1` có required action `CONFIGURE_TOTP`. User khác login ShopPay vẫn chỉ cần password — không phù hợp với "ví điện tử".
-
-**Mục tiêu**: bất kỳ user nào login client `shoppay-app` đều bị bắt setup + nhập TOTP code mỗi lần. Khi cùng user đó login ecommerce (`nextjs-app`), KHÔNG bị bắt MFA — vì policy mỗi app khác nhau.
-
-**Cách Keycloak làm**:
-1. Tạo `Authentication Flow` mới tên "browser with mandatory OTP" — copy từ flow `browser` mặc định, thêm execution `Conditional - User Configured Otp` chuyển thành `Required`.
-2. Trên client `shoppay-app`, set `authenticationFlowBindingOverrides.browser` = ID flow mới.
-
-**Lợi ích cụ thể**:
-1. **Compliance**: PCI-DSS 8.3 và PSD2 SCA yêu cầu MFA cho payment. Không có MFA = không launch được ShopPay ở EU.
-2. **Demo policy isolation**: cùng user pool, cùng SSO, nhưng app nhạy cảm hơn yêu cầu auth mạnh hơn. Đây là **giá trị cốt lõi** của centralized IdP — policy ở 1 chỗ, áp dụng khác nhau theo app.
-
-**Effort**: 1h — edit `authenticationFlows[]` trong realm.json + bind override.
-
-### D. Mermaid diagram (todo 6.1)
-
-**Lợi ích**: presentation/báo cáo. Người đọc hiểu kiến trúc trong 30 giây thay vì đọc 200 dòng README.
-
-**Effort**: 15 phút.
+### Trade-off
+- ✅ User không bị logout sau 5 phút khi đang dùng app.
+- ✅ Refresh token rotation = security best practice (compromise của 1 token cũ không tái sử dụng được).
+- ❌ Refresh logic chạy ở server side → mỗi page load có potential extra request đến Keycloak. Cache hit ratio quan trọng.
+- ❌ NextAuth không trigger refresh proactive (chỉ lazy lúc page request) → API call ngay khi access token vừa expire có thể fail trước khi callback chạy.
 
 ---
 
-## Quyết định scope
+## 6. Frontchannel logout vs Backchannel
 
-✅ **Làm ngay (autonomous)**:
-- C — TOTP enforce per-client (realm.json edit, độc lập với external)
-- B — SAML brokering qua 2nd realm (tự xây "company IdP" trong cùng Keycloak)
-- D — Mermaid diagram
+### Vấn đề
+Logout 1 app (ecommerce) phải invalidate session ở 2 app khác (seller-workspace, ShopPay) cùng SSO. Không thì user logout xong vẫn còn session ở các app khác.
 
-🟡 **Wire xong, đợi credential** (A — Google IdP):
-- Code + realm.json placeholder + .env.example sẵn sàng
-- User chỉ cần đăng ký Google OAuth ở Google Cloud Console (5 phút), paste 2 giá trị vào `.env`, restart Keycloak
+### Quyết định: Frontchannel (chọn) vs Backchannel (defer)
 
-❌ **Skip**:
-- 3.4 Event Listener SPI — heavy Java work, marginal value vì sync ở login đã đủ
-- 5.x FreeIPA + LDAP — multi-day infra, không phù hợp scope demo
-- ShopFood app — scope creep, không thêm gì mới về IAM
+| | Frontchannel | Backchannel |
+|---|---|---|
+| Cách hoạt động | Browser load 3 iframe ẩn, mỗi iframe gọi 1 client `/api/auth/frontchannel-logout` (GET) → app clear cookie | Keycloak POST `logout_token` JWT trực tiếp tới mỗi client `/api/auth/backchannel-logout` (server-to-server) |
+| Phụ thuộc | Browser (3rd-party cookie phải work) | Network (Keycloak phải reach client từ server side) |
+| Invalidation guarantee | Tốt khi browser cooperative; fail nếu browser block 3rd-party cookie hoặc tab đang đóng | Strong, không phụ thuộc browser |
+| Implementation | Đơn giản: 1 GET endpoint xoá cookie | Phức tạp: verify JWT signature, store revoked sid trong DB, check trong session callback |
+
+Demo này chọn frontchannel vì:
+- Đủ tốt cho `localhost` dev (cùng eTLD+1).
+- Setup cấu hình client + endpoint = vài phút.
+- Backchannel cần DB revoked-sid table + signed JWT verification = 1-2h code đáng để dành cho production.
+
+### Trade-off
+- ✅ Frontchannel hoạt động cho 90% use case demo.
+- ❌ Browser block 3rd-party cookie (Safari ITP, Brave default, Firefox ETP strict) → iframe không clear cookie được.
+- 🔄 **Bước tiếp**: production switch sang backchannel chuẩn — JWT logout token verify, DB revoked sid list, NextAuth `session` callback consult list.
 
 ---
 
-## Thứ tự execute
+## 7. Sync `user_profile` vs Event Listener SPI
 
-1. **C — TOTP enforce** (1h, low risk vì chỉ thêm flow, không sửa flow cũ)
-2. **B — SAML 2nd realm** (2h)
-3. **A — Google IdP scaffolding** (15 phút code + 5 phút user paste credential)
-4. **D — Mermaid** (15 phút)
+### Vấn đề
+App cần biết user info (email, name, roles) cho audit log, owner_id, business logic. Gọi Keycloak Admin API mỗi request = chậm + tải Keycloak.
 
-Mỗi bước verify bằng login thực tế trước khi qua bước kế.
+### Quyết định: Sync khi login (chọn) vs Event Listener SPI (defer)
 
+| | Sync khi login | Event Listener SPI |
+|---|---|---|
+| Cách | NextAuth `jwt` callback gọi `syncUserProfile()` upsert vào DB app | Keycloak emit event (UserRegistered/UserUpdated/UserDeleted) → SPI listener notify app DB |
+| Implementation | 1 file TS, ~30 dòng | Java module, build jar, extend Keycloak Docker image, deploy `/opt/keycloak/providers/`, register SPI |
+| Coverage | User CRUD ngoài luồng login (admin xoá user) → app DB stale | Real-time, mọi event |
+| Maintenance | Cao: stale data nếu user không login lâu | Cao: Java deps, Keycloak version compat |
+
+Demo chọn sync-khi-login vì:
+- 90% use case OK (user không login = không cần data ở app DB).
+- Pure TypeScript, không thêm Java toolchain.
+- Stale data tối đa = thời gian giữa 2 lần login user, acceptable cho non-critical app.
+
+### Trade-off
+- ✅ Implementation đơn giản, debug bằng Node.
+- ❌ Admin xoá user trong Keycloak → row `user_profile` còn lại trong DB app cho đến khi cleanup tay.
+- 🔄 **Bước tiếp**: SPI Java khi cần tight consistency (vd compliance: user yêu cầu xoá data theo GDPR, phải xoá cross-system trong vài phút).
+
+---
+
+## 8. Tách Postgres thành 2 instance
+
+### Vấn đề
+Ban đầu 1 Postgres chứa cả Keycloak data lẫn 3 app DB. Wipe Keycloak DB phải tránh wipe ecommerce/seller_workspace/shoppay → script phức tạp + nguy hiểm.
+
+### Quyết định
+2 service Postgres riêng:
+- `postgres-keycloak`: chỉ Keycloak, không expose port → security tốt hơn.
+- `postgres-app`: chứa 3 DB app, expose `:5432` cho dev (drizzle-kit chạy từ host).
+
+2 volume riêng → wipe 1 không đụng cái kia.
+
+### Trade-off
+- ✅ Wipe Keycloak (mỗi lần đổi realm.json) không mất data app.
+- ✅ Postgres Keycloak không expose → giảm attack surface.
+- ❌ 2 container = ~+150MB RAM. Không vấn đề cho dev.
+- ❌ App schema không thể JOIN với Keycloak schema (đúng intent: app chỉ thấy `user_profile` cache).
+
+---
+
+## Quy tắc thiết kế chung (rút ra từ project)
+
+1. **Mọi instruction chứa secret phải đọc từ `.env`, không bao giờ commit**.
+2. **Realm config phải reproducible**: chạy `bash scripts/reset.sh` ở máy mới phải ra kết quả y hệt máy cũ. Không có "config drift" giữa các môi trường.
+3. **Defense in depth**: route guard (proxy.ts) + action guard (server action). Bypass 1 lớp không đủ để leak.
+4. **Audit mọi sensitive action**: topup, pay, kyc.approve/reject, role.assign/revoke. 1 dòng `await logAudit(...)` ở cuối server action.
+5. **Idempotency**: mọi server action có thể được trigger 2 lần (user F5, network retry). Dedupe ở layer thấp nhất (DB unique constraint hoặc `onConflictDoUpdate`).
+6. **Cookie name riêng cho mỗi app**: 3 app trên `localhost` không đè cookie nhau. Trong prod (sub-domain khác nhau) không cần, nhưng cookie name riêng vẫn là good practice.
+7. **HMAC 2 chiều cho cross-service redirect**: không bao giờ trust query string.
+
+---
+
+Xem [todo.md](todo.md) cho status các item, [README.md](README.md) cho hướng dẫn vận hành + test plan A-L.
