@@ -14,21 +14,47 @@ Cả 3 app login chung qua realm `ecommerce-realm`. 1 lần đăng nhập → v�
 
 ## Kiến trúc
 
-```
-                     Browser
-                        │
-    ┌──────────┬────────┼────────┬──────────┐
-    ▼          ▼        ▼        ▼          ▼
- :3000     :3100     :3200    :8080      :8000
-ecommerce seller-ws shoppay  Keycloak    Nginx
+```mermaid
+flowchart TB
+    subgraph Upstream["Upstream IdP (federation)"]
+        Google["Google OIDC<br/>(2.3 — pending creds)"]
+        SAML["Company AD<br/>realm: acme-corp<br/>(2.4)"]
+        LDAP["FreeIPA / LDAP<br/>(5.x — deferred)"]
+    end
 
-                                │
-                                ▼
-                       Postgres (5432)
-                       ├── ecommerce
-                       ├── seller_workspace
-                       ├── shoppay
-                       └── keycloak
+    subgraph KC["Keycloak — realm: ecommerce-realm (:8080)"]
+        Broker["Identity Broker<br/>+ Authentication Flows<br/>+ Groups + Roles"]
+        Users[(users · roles · groups)]
+        Broker --- Users
+    end
+
+    subgraph Apps["Downstream Apps"]
+        Web["ecommerce :3000<br/>client: nextjs-app"]
+        Seller["seller-workspace :3100<br/>client: seller-workspace<br/>SAML SP"]
+        Pay["ShopPay :3200<br/>client: shoppay-app<br/>+ TOTP enforced"]
+    end
+
+    subgraph DB["Postgres (tách 2 instance)"]
+        PgKC[(postgres-keycloak<br/>nội bộ)]
+        PgApp[(postgres-app :5432<br/>ecommerce · seller_workspace · shoppay<br/>user_profile cache mỗi DB)]
+    end
+
+    Google -.OIDC broker.-> Broker
+    SAML  -.SAML broker.-> Broker
+    LDAP  -.user federation.-> Broker
+
+    Browser((Browser)) --> Web & Seller & Pay
+    Web --> Broker
+    Seller --> Broker
+    Pay --> Broker
+
+    Broker --- PgKC
+    Web --- PgApp
+    Seller --- PgApp
+    Pay --- PgApp
+
+    Web ==Cross-app payment<br/>HMAC signed==> Pay
+    Pay ==Return + sig==> Web
 ```
 
 | Stack | Version |

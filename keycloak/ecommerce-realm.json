@@ -1042,6 +1042,9 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "secret": "${SHOPPAY_CLIENT_SECRET}",
+      "authenticationFlowBindingOverrides": {
+        "browser": "browser-shoppay"
+      },
       "redirectUris": [
         "http://localhost:3200",
         "http://localhost:3200/",
@@ -1941,18 +1944,28 @@
       "hideOnLogin": false,
       "config": {
         "acceptsPromptNoneForwardFromClient": "false",
-        "clientId": "974449500491-f8v9f523ptudeptan2bqu0k25q11sdd7.apps.googleusercontent.com",
+        "clientId": "${GOOGLE_IDP_CLIENT_ID}",
         "disableUserInfo": "false",
         "showInAccountConsole": "ALWAYS",
         "filteredByClaim": "false",
         "syncMode": "IMPORT",
-        "clientSecret": "**********",
+        "clientSecret": "${GOOGLE_IDP_CLIENT_SECRET}",
         "caseSensitiveOriginalUsername": "false"
       },
       "types": []
     }
   ],
-  "identityProviderMappers": [],
+  "identityProviderMappers": [
+    {
+      "name": "google-email-verified-to-buyer",
+      "identityProviderAlias": "google",
+      "identityProviderMapper": "oidc-hardcoded-role-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "role": "buyer"
+      }
+    }
+  ],
   "components": {
     "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
       {
@@ -2132,6 +2145,58 @@
   },
   "internationalizationEnabled": false,
   "authenticationFlows": [
+    {
+      "id": "6b5a8642-7a11-4e18-b163-498929bb0e2b",
+      "alias": "browser-shoppay",
+      "description": "Custom browser flow for shoppay-app — username+password+TOTP REQUIRED. Nếu user chưa có TOTP, Keycloak tự prompt setup (userSetupAllowed=true).",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "autheticatorFlow": true,
+          "flowAlias": "shoppay-forms",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "id": "81bd4af2-723b-462e-96c4-c06338ef242e",
+      "alias": "shoppay-forms",
+      "description": "Username+password+TOTP form, TOTP REQUIRED.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": true
+        }
+      ]
+    },
     {
       "id": "7e282d4f-62a2-45a4-ad4f-6a397ddd8286",
       "alias": "Account verification options",

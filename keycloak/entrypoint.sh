@@ -21,7 +21,9 @@ if [ -f "$TEMPLATE" ]; then
     SELLER_WORKSPACE_CLIENT_SECRET \
     SHOPPAY_CLIENT_SECRET \
     BACKEND_ADMIN_CLIENT_SECRET \
-    SMTP_PASSWORD; do
+    SMTP_PASSWORD \
+    GOOGLE_IDP_CLIENT_ID \
+    GOOGLE_IDP_CLIENT_SECRET; do
     val="${!var:-}"
     if [ -z "$val" ]; then
       echo "[entrypoint] ERROR: env var $var is not set" >&2

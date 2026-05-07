@@ -307,3 +307,100 @@ Mở đường cho:
 - **Todo 2.3 (Google IdP)** — secret Google OAuth client đẩy thẳng vào root `.env` theo cùng pattern: `GOOGLE_IDP_CLIENT_SECRET=...`, reference trong realm.json bằng `${GOOGLE_IDP_CLIENT_SECRET}`.
 
 Pattern đã thiết lập ở 1.3 sẽ tái sử dụng cho mọi tích hợp về sau.
+
+---
+
+# PLAN-NEXT — Federation + Step-up MFA + Documentation
+
+> Sau khi xong 1.2, 1.3, 3.1, 4.1: bước tiếp tập trung vào **federation** (login bằng IdP ngoài) và **policy bảo mật khác biệt theo app** — đây là 2 thứ định nghĩa "Keycloak làm IdP trung tâm" thực sự.
+
+## Phân tích lợi ích
+
+### A. Google IdP brokering (todo 2.3 + 2.6)
+
+**Kiến trúc**:
+```
+User → app (RP) → Keycloak (broker) → Google (real IdP)
+                       ↑
+                  user_profile cache
+```
+
+Keycloak là **broker** — vừa đóng vai trò RP (quan hệ với Google), vừa đóng vai trò IdP (quan hệ với app). App KHÔNG biết Google tồn tại; app chỉ thấy 1 OIDC provider duy nhất là Keycloak. Đây là điểm mạnh của broker pattern: thêm/xoá IdP ngoài không động đến app code.
+
+**Lợi ích cụ thể**:
+1. Onboarding friction giảm: user click 1 nút "Login with Google" thay vì điền form. Studies từ Auth0/Okta: tỉ lệ hoàn tất signup tăng 30-70% với social login.
+2. Password do Google quản lý — Google có 2FA, fraud detection, phishing protection xịn hơn bất kỳ team nhỏ nào tự làm.
+3. Email đã verified mặc định (Google không cho dùng email chưa verify) → có thể auto-trust và gán role ngay.
+4. Demo: Identity Brokering — Keycloak mediator giữa N upstream IdP (Google, Facebook, GitHub, SAML, LDAP) và M downstream app.
+
+**Effort**: 30 phút — gồm 5 phút đăng ký Google OAuth client ở [console.cloud.google.com](https://console.cloud.google.com/apis/credentials).
+
+### B. SAML 2.0 brokering (todo 2.4)
+
+**Use case**: nhân viên seller login bằng tài khoản công ty của họ (Azure AD / Okta / Google Workspace SAML) thay vì tự tạo password trên Seller Workspace.
+
+**Kiến trúc**: tương tự Google IdP nhưng protocol SAML thay vì OIDC.
+```
+Staff → seller-workspace → Keycloak (SAML SP) → Company IdP (SAML IdP)
+```
+
+**Lợi ích cụ thể**:
+1. **Enterprise-grade**: SAML là chuẩn ngành cho B2B SSO. Bank, gov, healthcare hầu như chỉ chấp nhận SAML.
+2. **Provisioning tự động**: khi nhân viên rời công ty, IT disable account ở AD → user mất quyền vào Seller Workspace ngay (vì không SAML auth được nữa). Không cần app maintain account.
+3. **Demo cùng Keycloak làm cả OIDC IdP (cho buyer) lẫn SAML SP (cho enterprise staff)** → minh hoạ Keycloak versatile.
+
+**Cách implement không cần external**: tạo realm thứ 2 trong cùng Keycloak instance làm "company IdP". Realm chính (ecommerce-realm) broker tới realm phụ qua SAML metadata. Hoàn toàn tự động hoá được.
+
+**Effort**: 2h — tạo realm `acme-corp-realm`, export SAML metadata, import vào ecommerce-realm.
+
+### C. TOTP enforce per-client (todo 2.5)
+
+**Vấn đề hiện tại**: chỉ user `wallet1` có required action `CONFIGURE_TOTP`. User khác login ShopPay vẫn chỉ cần password — không phù hợp với "ví điện tử".
+
+**Mục tiêu**: bất kỳ user nào login client `shoppay-app` đều bị bắt setup + nhập TOTP code mỗi lần. Khi cùng user đó login ecommerce (`nextjs-app`), KHÔNG bị bắt MFA — vì policy mỗi app khác nhau.
+
+**Cách Keycloak làm**:
+1. Tạo `Authentication Flow` mới tên "browser with mandatory OTP" — copy từ flow `browser` mặc định, thêm execution `Conditional - User Configured Otp` chuyển thành `Required`.
+2. Trên client `shoppay-app`, set `authenticationFlowBindingOverrides.browser` = ID flow mới.
+
+**Lợi ích cụ thể**:
+1. **Compliance**: PCI-DSS 8.3 và PSD2 SCA yêu cầu MFA cho payment. Không có MFA = không launch được ShopPay ở EU.
+2. **Demo policy isolation**: cùng user pool, cùng SSO, nhưng app nhạy cảm hơn yêu cầu auth mạnh hơn. Đây là **giá trị cốt lõi** của centralized IdP — policy ở 1 chỗ, áp dụng khác nhau theo app.
+
+**Effort**: 1h — edit `authenticationFlows[]` trong realm.json + bind override.
+
+### D. Mermaid diagram (todo 6.1)
+
+**Lợi ích**: presentation/báo cáo. Người đọc hiểu kiến trúc trong 30 giây thay vì đọc 200 dòng README.
+
+**Effort**: 15 phút.
+
+---
+
+## Quyết định scope
+
+✅ **Làm ngay (autonomous)**:
+- C — TOTP enforce per-client (realm.json edit, độc lập với external)
+- B — SAML brokering qua 2nd realm (tự xây "company IdP" trong cùng Keycloak)
+- D — Mermaid diagram
+
+🟡 **Wire xong, đợi credential** (A — Google IdP):
+- Code + realm.json placeholder + .env.example sẵn sàng
+- User chỉ cần đăng ký Google OAuth ở Google Cloud Console (5 phút), paste 2 giá trị vào `.env`, restart Keycloak
+
+❌ **Skip**:
+- 3.4 Event Listener SPI — heavy Java work, marginal value vì sync ở login đã đủ
+- 5.x FreeIPA + LDAP — multi-day infra, không phù hợp scope demo
+- ShopFood app — scope creep, không thêm gì mới về IAM
+
+---
+
+## Thứ tự execute
+
+1. **C — TOTP enforce** (1h, low risk vì chỉ thêm flow, không sửa flow cũ)
+2. **B — SAML 2nd realm** (2h)
+3. **A — Google IdP scaffolding** (15 phút code + 5 phút user paste credential)
+4. **D — Mermaid** (15 phút)
+
+Mỗi bước verify bằng login thực tế trước khi qua bước kế.
+
