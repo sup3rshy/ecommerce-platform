@@ -148,17 +148,19 @@ Nội dung:
 
 "ShopPay áp dụng rule: giao dịch trên 5.000.000 VND cần KYC. Reviewer có role admin hoặc staff-finance duyệt hồ sơ, app gọi Keycloak Admin API gán role `kyc-verified`."
 
-Fix quan trọng:
+Điểm cần giải thích:
 
-- Không chỉ tin role trong JWT cookie vì token có thể stale sau khi approve.
-- Topup lớn check role trong session, role mới nhất từ Keycloak Admin API, và DB KYC approved.
-- User được nạp ngay sau approve, không cần logout/login.
+- Admin approve KYC sẽ gán role `kyc-verified` trong Keycloak.
+- JWT/session cookie của buyer là snapshot tại thời điểm login, nên chưa tự có role mới.
+- Buyer cần logout/login lại để nhận token mới rồi mới nạp được số tiền lớn.
 
 Demo:
 
 1. `wallet1` nộp KYC.
 2. `admin1` approve ở `/kyc/admin`.
-3. `wallet1` nạp 6.000.000 VND thành công ngay.
+3. `wallet1` thử nạp 6.000.000 VND và vẫn bị chặn vì token cũ chưa có role mới.
+4. `wallet1` logout/login lại.
+5. `wallet1` nạp 6.000.000 VND thành công.
 
 ## Slide 10 - Cross-app Payment HMAC
 
@@ -239,9 +241,9 @@ Nếu chỉ có 7 phút demo, dùng thứ tự này:
 
 Frontchannel dễ demo nhanh trên local. Backchannel cần verify JWT logout token, lưu revoked session id và check trên mỗi request. Đây là roadmap production.
 
-**Vì sao topup check cả DB KYC lẫn Keycloak role?**
+**Vì sao buyer phải login lại sau khi admin approve KYC?**
 
-Để tránh stale JWT. Role mới có thể đã được gán trong Keycloak nhưng session cookie của user chưa có claim mới. DB approved giúp UX nhanh, Keycloak role giúp đồng bộ IAM.
+Vì role nằm trong token/JWT được cấp lúc login. Khi admin gán `kyc-verified`, Keycloak đã cập nhật user, nhưng token cũ trong browser không tự đổi. Logout/login lại sẽ cấp token mới có role đó.
 
 **TOTP ShopPay có phải step-up không?**
 

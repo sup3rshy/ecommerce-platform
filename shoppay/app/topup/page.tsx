@@ -4,10 +4,6 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "../api/auth/[...nextauth]/route";
 import { topUp, getOrCreateWallet, formatVND } from "@/lib/wallet";
 import { logAudit } from "@/lib/audit";
-import { db } from "@/db";
-import { kycDocuments } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { userHasRealmRole } from "@/lib/keycloakAdmin";
 
 const PRESETS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
@@ -22,22 +18,10 @@ async function doTopUp(formData: FormData) {
   if (!amount || amount <= 0) return;
   if (amount > 50_000_000) throw new Error("amount too large");
 
-  let isKycApproved = true;
-  if (amount > HIGH_VALUE_THRESHOLD) {
-    const roles = (session.user.roles ?? []) as string[];
-    const hasKycRole =
-      roles.includes("kyc-verified") ||
-      (await userHasRealmRole(session.user.id, "kyc-verified"));
-    const [kycDoc] = await db
-      .select({ status: kycDocuments.status })
-      .from(kycDocuments)
-      .where(eq(kycDocuments.userId, session.user.id))
-      .limit(1);
-    isKycApproved = hasKycRole || kycDoc?.status === "approved";
-
-    if (!isKycApproved) {
-      redirect("/kyc");
-    }
+  const roles = (session.user.roles ?? []) as string[];
+  const isKycApproved = roles.includes("kyc-verified");
+  if (amount > HIGH_VALUE_THRESHOLD && !isKycApproved) {
+    redirect("/kyc");
   }
 
   await topUp({

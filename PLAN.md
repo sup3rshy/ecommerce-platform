@@ -105,13 +105,13 @@ Trade-off: HMAC là symmetric secret; nếu một bên leak secret thì bên đ�
 
 Business rule: giao dịch ShopPay trên 5.000.000 VND cần KYC.
 
-Ban đầu action chỉ check `session.user.roles.includes("kyc-verified")`. Cách này sai UX sau khi admin approve vì role mới đã có trong Keycloak nhưng JWT cookie cũ chưa có claim mới.
+Action topup check `session.user.roles.includes("kyc-verified")`. Đây là cách cố ý để chứng minh role claim trong token là snapshot tại thời điểm login.
 
-Quyết định mới:
+Quyết định hiện tại:
 
 - `approveKyc` cập nhật DB và luôn gọi Keycloak Admin API gán role, kể cả khi document đã `approved`.
-- `topup` > 5 triệu check 3 nguồn: role trong session, role mới nhất từ Keycloak Admin API, và DB `kyc_documents.status = approved`.
-- User được nạp tiền ngay sau khi duyệt KYC, không cần logout/login lại.
+- `topup` > 5 triệu chỉ cho qua khi token hiện tại đã có role `kyc-verified`.
+- Sau khi admin duyệt KYC, user cần logout/login lại để nhận token mới có role vừa được gán.
 
 ## 10. Frontchannel logout và giới hạn của browser
 

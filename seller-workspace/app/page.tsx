@@ -4,6 +4,7 @@ import Link from "next/link";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  const isAuthenticated = Boolean(session?.user?.id);
 
   return (
     <div>
@@ -13,12 +14,12 @@ export default async function Home() {
         ecommerce platform.
       </p>
 
-      {session?.user ? (
+      {isAuthenticated ? (
         <div className="alert-success" style={{ marginTop: 20 }}>
           <p style={{ margin: 0 }}>
-            Đã đăng nhập với <strong>{session.user.name}</strong>. Roles:{" "}
+            Đã đăng nhập với <strong>{session?.user?.name}</strong>. Roles:{" "}
             <code className="code-inline">
-              {session.user.roles?.join(", ") || "none"}
+              {session?.user?.roles?.join(", ") || "none"}
             </code>
           </p>
           <Link href="/dashboard" className="btn-success">

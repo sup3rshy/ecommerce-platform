@@ -25,6 +25,7 @@ const formatPrice = (price: number) => `${price.toLocaleString("vi-VN")} VNĐ`;
 export default async function Home({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const session = await getServerSession(authOptions);
+  const isAuthenticated = Boolean(session?.user?.id);
   const roles = session?.user?.roles ?? [];
   const businessRoles = ["buyer", "seller", "admin"];
   const visibleRoles = roles.filter((role) => businessRoles.includes(role));
@@ -82,7 +83,7 @@ export default async function Home({ searchParams }: PageProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {session && canBuy && (
+            {isAuthenticated && canBuy && (
               <Link
                 href="/orders"
                 className="rounded-lg bg-white/20 px-4 py-2 text-sm font-medium backdrop-blur hover:bg-white/30"
@@ -90,7 +91,7 @@ export default async function Home({ searchParams }: PageProps) {
                 Lịch sử mua hàng
               </Link>
             )}
-            {session && canBuy && (
+            {isAuthenticated && canBuy && (
               <Link
                 href="/cart"
                 className="rounded-lg bg-white/20 px-4 py-2 text-sm font-medium backdrop-blur hover:bg-white/30"
@@ -98,7 +99,7 @@ export default async function Home({ searchParams }: PageProps) {
                 Giỏ hàng ({cartCount})
               </Link>
             )}
-            {!session && (
+            {!isAuthenticated && (
               <Link
                 href="/api/auth/signin/keycloak"
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
@@ -110,12 +111,12 @@ export default async function Home({ searchParams }: PageProps) {
         </div>
       </section>
 
-      {session ? (
+      {isAuthenticated ? (
         <section className="rounded-2xl border border-blue-100 bg-blue-50/40 p-5 shadow-sm">
           <p className="text-base font-semibold text-slate-900">Đã đăng nhập thành công</p>
           <div className="mt-3 grid gap-2 text-sm text-slate-700">
             <p>
-              Tên: <span className="font-semibold">{session.user?.name}</span>
+              Tên: <span className="font-semibold">{session?.user?.name}</span>
             </p>
             <p>
               Vai trò:{" "}
@@ -190,7 +191,7 @@ export default async function Home({ searchParams }: PageProps) {
                         Xem chi tiết
                       </Link>
 
-                      {session && canBuy ? (
+                      {isAuthenticated && canBuy ? (
                         <div className="flex items-center gap-2">
                           <AddToCartButton productId={product.id} />
                           <CheckoutButton product={{ id: product.id, name: product.name, price: product.price }} />

@@ -66,8 +66,8 @@ Ký hiệu:
 - [Done] `/kyc/admin` cho `admin` và `staff-finance`.
 - [Done] Approve KYC update DB, gán role `kyc-verified` qua Keycloak Admin API, ghi audit.
 - [Done] Approve idempotent: nếu DB đã approved vẫn gán lại role để tự heal Keycloak role bị thiếu.
-- [Done] Topup > 5.000.000 VND check KYC từ session role, Keycloak role mới nhất, và DB approved.
-- [Done] User không cần logout/login lại sau khi admin approve KYC.
+- [Done] Topup > 5.000.000 VND check role `kyc-verified` trong session token hiện tại.
+- [Done] Sau khi admin approve KYC, user cần logout/login lại để nhận token mới có role `kyc-verified`.
 - [Done] User chưa KYC bị redirect sang `/kyc` thay vì ném error làm Next overlay.
 - [Next] Thêm UI message trên `/topup` khi bị redirect do cần KYC.
 - [Next] Thêm unit/integration test cho `doTopUp`, `approveKyc`, và HMAC payment.

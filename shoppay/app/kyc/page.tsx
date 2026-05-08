@@ -51,6 +51,7 @@ const STATUS_LABEL: Record<string, [string, string]> = {
 export default async function KycPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) redirect("/api/auth/signin");
+  const hasKycRole = session.user.roles?.includes("kyc-verified") ?? false;
 
   const existing = await db
     .select()
@@ -58,6 +59,7 @@ export default async function KycPage() {
     .where(eq(kycDocuments.userId, session.user.id))
     .limit(1);
   const doc = existing[0];
+  const needsFreshLogin = doc?.status === "approved" && !hasKycRole;
 
   return (
     <div>
@@ -103,6 +105,13 @@ export default async function KycPage() {
               Ghi chú reviewer: {doc.reviewerNote}
             </p>
           )}
+          {needsFreshLogin && (
+            <div className="alert-warn" style={{ marginTop: 12 }}>
+              Hồ sơ đã được duyệt, nhưng phiên đăng nhập hiện tại chưa có role{" "}
+              <code className="code-inline">kyc-verified</code>. Hãy đăng xuất rồi
+              đăng nhập lại ShopPay để nạp hoặc thanh toán trên 5 triệu VND.
+            </div>
+          )}
         </section>
       )}
 
@@ -136,7 +145,7 @@ export default async function KycPage() {
         <code className="code-inline">staff-finance</code>) sẽ duyệt qua{" "}
         <a href="/kyc/admin">/kyc/admin</a> → khi approve, ShopPay tự gọi Keycloak
         Admin API gán role <code className="code-inline">kyc-verified</code> cho bạn.
-        Giao dịch giá trị cao được kiểm tra lại phía server nên không cần logout/login lại.
+        Bạn cần logout/login lại để token mới có role này.
       </div>
     </div>
   );

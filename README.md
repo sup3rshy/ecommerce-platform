@@ -18,7 +18,7 @@ Repo mô phỏng hệ sinh thái ecommerce gồm marketplace, seller back-office
 - SAML identity brokering với mock company realm `acme-corp-realm`.
 - Cross-app payment ecommerce -> ShopPay -> ecommerce bằng HMAC-SHA256.
 - KYC admin approve gán role `kyc-verified` bằng Keycloak Admin API.
-- Topup > 5.000.000 VND check KYC server-side, không cần user logout/login sau khi duyệt.
+- Topup > 5.000.000 VND yêu cầu role `kyc-verified` trong token hiện tại; sau khi admin duyệt KYC, user cần logout/login lại để nhận token mới.
 - Secret tách ra `.env`, realm JSON dùng placeholder runtime.
 
 ## Kiến trúc
@@ -165,7 +165,10 @@ Kết quả mong đợi: Keycloak trả issuer của `ecommerce-realm`, 3 app tr
 3. Login `admin1` hoặc `finance1` vào ShopPay.
 4. Vào `/kyc/admin`, approve hồ sơ của `wallet1`.
 5. Quay lại tab `wallet1`, refresh `/topup`, nạp `6000000`.
-6. Kết quả mong đợi: giao dịch thành công ngay, không cần logout/login lại.
+6. Kết quả mong đợi: vẫn bị chặn vì token hiện tại chưa có role `kyc-verified`.
+7. Logout `wallet1`, login lại ShopPay để lấy token mới.
+8. Nạp lại `6000000`.
+9. Kết quả mong đợi: giao dịch thành công vì token mới đã có role `kyc-verified`.
 
 Nếu user chưa KYC, topup > 5 triệu sẽ redirect sang `/kyc`.
 

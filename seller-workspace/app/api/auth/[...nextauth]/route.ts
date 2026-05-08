@@ -93,6 +93,9 @@ export const authOptions: NextAuthOptions = {
       if (token.error === "RefreshAccessTokenError") {
         if (session.user) {
           session.user.id = undefined;
+          session.user.name = undefined;
+          session.user.email = undefined;
+          session.user.image = undefined;
           session.user.roles = [];
           session.user.groups = [];
         }

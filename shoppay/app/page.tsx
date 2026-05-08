@@ -4,6 +4,7 @@ import Link from "next/link";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  const isAuthenticated = Boolean(session?.user?.id);
 
   return (
     <div>
@@ -20,9 +21,9 @@ export default async function Home() {
         .
       </p>
 
-      {session?.user ? (
+      {isAuthenticated ? (
         <div className="alert-success" style={{ marginTop: 20 }}>
-          Đã đăng nhập với <strong>{session.user.name}</strong>.{" "}
+          Đã đăng nhập với <strong>{session?.user?.name}</strong>.{" "}
           <Link
             href="/wallet"
             style={{
