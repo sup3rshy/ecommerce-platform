@@ -39,6 +39,18 @@ export const authOptions: NextAuthOptions = {
       name: "ecommerce.csrf-token",
       options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
     },
+    pkceCodeVerifier: {
+      name: "ecommerce.pkce.code_verifier",
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
+    },
+    state: {
+      name: "ecommerce.state",
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
+    },
+    nonce: {
+      name: "ecommerce.nonce",
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: false },
+    },
   },
   callbacks: {
     async jwt({ token, user, account, profile }) {
@@ -85,32 +97,13 @@ export const authOptions: NextAuthOptions = {
       session.idToken = token.idToken;
       return session;
     },
-    async redirect({ baseUrl }) {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      else if (new URL(url).origin === baseUrl) return url;
       return baseUrl;
     },
   },
-  events: {
-    async signOut({ token }) {
-      if (token.idToken && process.env.KEYCLOAK_ISSUER) {
-        try {
-          const keycloakUrl = new URL(
-            `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/logout`
-          );
-          keycloakUrl.searchParams.set("id_token_hint", token.idToken as string);
-          
-          // Gọi Keycloak logout endpoint để invalidate session
-          await fetch(keycloakUrl.toString(), {
-            method: "GET",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          }).catch(() => {
-            // Ignore errors from Keycloak logout
-          });
-        } catch (error) {
-          console.error("Error logging out from Keycloak:", error);
-        }
-      }
-    },
-  },
+  events: {},
 };
 
 const handler = NextAuth(authOptions);

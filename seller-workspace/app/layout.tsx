@@ -41,6 +41,7 @@ export default async function RootLayout({
               userName={session?.user?.name}
               roles={userRoles}
               showNav={hasWorkspaceAccess}
+              idToken={session?.idToken as string | undefined}
             />
             <main className="card">{children}</main>
           </div>

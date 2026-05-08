@@ -17,7 +17,10 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
       throw new Error("Missing Keycloak env vars");
     }
     if (!token.refreshToken) {
-      throw new Error("No refresh token");
+      // Session cũ trước khi feature refresh được wire, hoặc refresh token đã
+      // bị Keycloak revoke. Trả token nguyên xi — user sẽ phải relogin khi
+      // access token hết hạn (NextAuth cookie tự expire theo session.maxAge).
+      return token;
     }
 
     const url = `${issuer}/protocol/openid-connect/token`;
@@ -31,19 +34,19 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
+      body: body.toString(),
+      cache: "no-store",
     });
-    const refreshed = (await resp.json()) as {
-      access_token: string;
-      expires_in: number;
-      refresh_token?: string;
-      refresh_expires_in?: number;
-      id_token?: string;
-      error?: string;
-    };
 
-    if (!resp.ok || refreshed.error) {
-      console.error("[refreshAccessToken] failed:", refreshed);
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[refreshAccessToken] HTTP ${resp.status} failed:`, text);
+      return { ...token, error: "RefreshAccessTokenError" };
+    }
+
+    const refreshed = await resp.json();
+    if (refreshed.error) {
+      console.error("[refreshAccessToken] Keycloak error:", refreshed);
       return { ...token, error: "RefreshAccessTokenError" };
     }
 
@@ -51,7 +54,6 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
       ...token,
       accessToken: refreshed.access_token,
       accessTokenExpires: Date.now() + refreshed.expires_in * 1000,
-      // Keycloak rotates refresh token theo default — dùng cái mới nếu có
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
       idToken: refreshed.id_token ?? token.idToken,
       error: undefined,

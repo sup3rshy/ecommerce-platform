@@ -34,6 +34,7 @@ export default async function RootLayout({
               isAuthenticated={Boolean(session?.user?.id)}
               userName={session?.user?.name}
               roles={session?.user?.roles ?? []}
+              idToken={session?.idToken as string | undefined}
             />
             <main className="card">{children}</main>
           </div>

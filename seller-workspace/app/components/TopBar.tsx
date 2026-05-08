@@ -39,11 +39,13 @@ export function TopBar({
   userName,
   roles,
   showNav = true,
+  idToken,
 }: {
   isAuthenticated: boolean;
   userName?: string | null;
   roles: string[];
   showNav?: boolean;
+  idToken?: string;
 }) {
   return (
     <header className="topbar">
@@ -70,7 +72,18 @@ export function TopBar({
               </div>
             </div>
             <button
-              onClick={() => signOut({ callbackUrl: "/" })}
+              onClick={async () => {
+                const keycloakIssuer = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER || "http://localhost:8080/realms/ecommerce-realm";
+                if (idToken) {
+                  const url = new URL(`${keycloakIssuer}/protocol/openid-connect/logout`);
+                  url.searchParams.set("id_token_hint", idToken);
+                  url.searchParams.set("post_logout_redirect_uri", `${window.location.origin}/`);
+                  await signOut({ redirect: false });
+                  window.location.href = url.toString();
+                } else {
+                  await signOut({ redirect: true, callbackUrl: "/" });
+                }
+              }}
               className="btn"
             >
               Đăng xuất

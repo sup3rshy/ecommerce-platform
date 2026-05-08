@@ -2001,7 +2001,7 @@
     {
       "name": "acme-corp-to-seller",
       "identityProviderAlias": "acme-corp",
-      "identityProviderMapper": "saml-hardcoded-role-idp-mapper",
+      "identityProviderMapper": "oidc-hardcoded-role-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
         "role": "seller"
@@ -2952,7 +2952,7 @@
       "name": "Configure OTP",
       "providerId": "CONFIGURE_TOTP",
       "enabled": true,
-      "defaultAction": true,
+      "defaultAction": false,
       "priority": 10,
       "config": {}
     },
