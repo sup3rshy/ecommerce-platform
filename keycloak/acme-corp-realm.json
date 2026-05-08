@@ -44,6 +44,7 @@
       "enabled": true,
       "protocol": "saml",
       "publicClient": true,
+      "adminUrl": "http://localhost:8080/realms/ecommerce-realm/broker/acme-corp/endpoint",
       "redirectUris": [
         "http://localhost:8080/realms/ecommerce-realm/broker/acme-corp/endpoint",
         "http://localhost:8080/realms/ecommerce-realm/broker/acme-corp/endpoint/*"
@@ -58,7 +59,9 @@
         "saml.force.post.binding": "true",
         "saml.signing.certificate": "",
         "saml_name_id_format": "email",
-        "saml_force_name_id_format": "true"
+        "saml_force_name_id_format": "true",
+        "saml_single_logout_service_url_post": "http://localhost:8080/realms/ecommerce-realm/broker/acme-corp/endpoint",
+        "saml_single_logout_service_url_redirect": "http://localhost:8080/realms/ecommerce-realm/broker/acme-corp/endpoint"
       },
       "protocolMappers": [
         {

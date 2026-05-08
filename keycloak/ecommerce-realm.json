@@ -556,9 +556,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Buyer1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Buyer1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["buyer"]
+      "realmRoles": [
+        "buyer"
+      ]
     },
     {
       "username": "seller1",
@@ -566,9 +572,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Seller1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Seller1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["seller"]
+      "realmRoles": [
+        "seller"
+      ]
     },
     {
       "username": "admin1",
@@ -576,9 +588,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Admin1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Admin1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["admin"]
+      "realmRoles": [
+        "admin"
+      ]
     },
     {
       "username": "warehouse1",
@@ -586,9 +604,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Warehouse1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Warehouse1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["staff-warehouse"]
+      "realmRoles": [
+        "staff-warehouse"
+      ]
     },
     {
       "username": "cs1",
@@ -596,9 +620,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Cs1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Cs1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["staff-cs"]
+      "realmRoles": [
+        "staff-cs"
+      ]
     },
     {
       "username": "finance1",
@@ -606,9 +636,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Finance1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Finance1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["staff-finance"]
+      "realmRoles": [
+        "staff-finance"
+      ]
     },
     {
       "username": "wallet1",
@@ -616,10 +652,18 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "Wallet1@2024", "temporary": false }
+        {
+          "type": "password",
+          "value": "Wallet1@2024",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["wallet-user"],
-      "requiredActions": ["CONFIGURE_TOTP"]
+      "realmRoles": [
+        "wallet-user"
+      ],
+      "requiredActions": [
+        "CONFIGURE_TOTP"
+      ]
     }
   ],
   "scopeMappings": [
@@ -1948,6 +1992,7 @@
       "hideOnLogin": false,
       "firstBrokerLoginFlowAlias": "first broker login",
       "config": {
+        "singleLogoutServiceUrl": "http://localhost:8080/realms/acme-corp-realm/protocol/saml",
         "singleSignOnServiceUrl": "http://localhost:8080/realms/acme-corp-realm/protocol/saml",
         "entityId": "http://localhost:8080/realms/ecommerce-realm",
         "idpEntityId": "http://localhost:8080/realms/acme-corp-realm",
@@ -2220,7 +2265,7 @@
     {
       "id": "6b5a8642-7a11-4e18-b163-498929bb0e2b",
       "alias": "browser-shoppay",
-      "description": "Custom browser flow for shoppay-app. KHÔNG dùng auth-cookie SSO — luôn buộc password+TOTP fresh mỗi lần vào ShopPay từ ngoài. Trong cùng session ShopPay, NextAuth cookie giữ user, không cần round-trip Keycloak nữa.",
+      "description": "Custom browser flow for shoppay-app. Cho phép Cookie hoặc SAML, nhưng LUÔN BUỘC TOTP fresh mỗi lần vào ShopPay từ ngoài.",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
@@ -2228,27 +2273,9 @@
         {
           "authenticatorFlow": true,
           "requirement": "REQUIRED",
-          "priority": 30,
-          "autheticatorFlow": true,
-          "flowAlias": "shoppay-forms",
-          "userSetupAllowed": false
-        }
-      ]
-    },
-    {
-      "id": "81bd4af2-723b-462e-96c4-c06338ef242e",
-      "alias": "shoppay-forms",
-      "description": "Username+password+TOTP form, TOTP REQUIRED.",
-      "providerId": "basic-flow",
-      "topLevel": false,
-      "builtIn": false,
-      "authenticationExecutions": [
-        {
-          "authenticator": "auth-username-password-form",
-          "authenticatorFlow": false,
-          "requirement": "REQUIRED",
           "priority": 10,
-          "autheticatorFlow": false,
+          "autheticatorFlow": true,
+          "flowAlias": "shoppay-alternatives",
           "userSetupAllowed": false
         },
         {
@@ -2258,6 +2285,40 @@
           "priority": 20,
           "autheticatorFlow": false,
           "userSetupAllowed": true
+        }
+      ]
+    },
+    {
+      "id": "81bd4af2-723b-462e-96c4-c06338ef242e",
+      "alias": "shoppay-alternatives",
+      "description": "Các phương thức xác thực cơ bản trước khi bước vào TOTP.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
         }
       ]
     },
