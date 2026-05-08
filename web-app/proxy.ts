@@ -11,7 +11,7 @@ export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const isApi = path.startsWith("/api/");
 
-  if (!token) {
+  if (!token || token.error === "RefreshAccessTokenError") {
     if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -9,6 +9,15 @@ import type { JWT } from "next-auth/jwt";
  * client-side biết và force re-login.
  */
 export async function refreshAccessToken(token: JWT): Promise<JWT> {
+  const expiredToken = {
+    ...token,
+    accessToken: undefined,
+    refreshToken: undefined,
+    idToken: undefined,
+    accessTokenExpires: 0,
+    error: "RefreshAccessTokenError",
+  };
+
   try {
     const issuer = process.env.KEYCLOAK_ISSUER;
     const clientId = process.env.KEYCLOAK_CLIENT_ID;
@@ -17,10 +26,7 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
       throw new Error("Missing Keycloak env vars");
     }
     if (!token.refreshToken) {
-      // Session cũ trước khi feature refresh được wire, hoặc refresh token đã
-      // bị Keycloak revoke. Trả token nguyên xi — user sẽ phải relogin khi
-      // access token hết hạn (NextAuth cookie tự expire theo session.maxAge).
-      return token;
+      return expiredToken;
     }
 
     const url = `${issuer}/protocol/openid-connect/token`;
@@ -40,14 +46,14 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[refreshAccessToken] HTTP ${resp.status} failed:`, text);
-      return { ...token, error: "RefreshAccessTokenError" };
+      console.warn(`[refreshAccessToken] HTTP ${resp.status} failed:`, text);
+      return expiredToken;
     }
 
     const refreshed = await resp.json();
     if (refreshed.error) {
-      console.error("[refreshAccessToken] Keycloak error:", refreshed);
-      return { ...token, error: "RefreshAccessTokenError" };
+      console.warn("[refreshAccessToken] Keycloak error:", refreshed);
+      return expiredToken;
     }
 
     return {
@@ -59,7 +65,7 @@ export async function refreshAccessToken(token: JWT): Promise<JWT> {
       error: undefined,
     };
   } catch (err) {
-    console.error("[refreshAccessToken] exception:", err);
-    return { ...token, error: "RefreshAccessTokenError" };
+    console.warn("[refreshAccessToken] exception:", err);
+    return expiredToken;
   }
 }

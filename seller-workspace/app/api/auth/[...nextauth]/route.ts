@@ -61,6 +61,7 @@ export const authOptions: NextAuthOptions = {
         token.accessTokenExpires = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 5 * 60 * 1000;
+        token.error = undefined;
       }
       if (user) {
         token.id = user.id;
@@ -83,11 +84,22 @@ export const authOptions: NextAuthOptions = {
           console.error("syncUserProfile failed:", err);
         }
       }
+      if (token.error === "RefreshAccessTokenError") return token;
       const expires = token.accessTokenExpires as number | undefined;
       if (expires && Date.now() < expires - 60_000) return token;
       return await refreshAccessToken(token);
     },
     async session({ session, token }) {
+      if (token.error === "RefreshAccessTokenError") {
+        if (session.user) {
+          session.user.id = undefined;
+          session.user.roles = [];
+          session.user.groups = [];
+        }
+        session.idToken = undefined;
+        session.error = token.error;
+        return session;
+      }
       if (session.user) {
         session.user.id = token.id;
         session.user.roles = token.roles;

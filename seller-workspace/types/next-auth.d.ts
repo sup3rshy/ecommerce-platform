@@ -3,6 +3,7 @@ import { DefaultSession } from "next-auth";
 declare module "next-auth" {
   interface Session {
     idToken?: string;
+    error?: string;
     user: {
       id?: string;
       roles?: string[];
@@ -23,5 +24,9 @@ declare module "next-auth/jwt" {
     roles?: string[];
     groups?: string[];
     idToken?: string;
+    accessToken?: string;
+    refreshToken?: string;
+    accessTokenExpires?: number;
+    error?: string;
   }
 }

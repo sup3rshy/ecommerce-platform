@@ -16,7 +16,7 @@ export async function proxy(req: NextRequest) {
     cookieName: "seller-workspace.session-token",
   });
 
-  if (!token) {
+  if (!token || token.error === "RefreshAccessTokenError") {
     const signInUrl = new URL("/api/auth/signin", req.url);
     signInUrl.searchParams.set(
       "callbackUrl",
