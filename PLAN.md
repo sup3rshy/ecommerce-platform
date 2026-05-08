@@ -1,253 +1,144 @@
-# PLAN — Phân tích kiến trúc & Quyết định thiết kế
-
-> Đồ án mô phỏng hệ sinh thái Shopee/ShopeeFood/ShopeePay với Keycloak làm IdP trung tâm. File này KHÔNG kể lại hướng dẫn — đó nằm ở [README.md](README.md). Đây là **why** đằng sau các quyết định kiến trúc, để người đọc hiểu trade-off và replicate được cho dự án thật.
-
-Mục lục:
-1. [Tách secret ra `.env`](#1-tách-secret-ra-env)
-2. [TOTP enforce per-client](#2-totp-enforce-per-client-cho-shoppay)
-3. [SAML brokering qua realm thứ 2](#3-saml-brokering-qua-realm-thứ-2)
-4. [Cross-app payment với HMAC](#4-cross-app-payment-với-hmac-2-chiều)
-5. [Refresh token rotation](#5-refresh-token-rotation-trong-nextauth)
-6. [Frontchannel logout vs Backchannel](#6-frontchannel-logout-vs-backchannel)
-7. [Sync `user_profile` vs Event Listener SPI](#7-sync-user_profile-vs-event-listener-spi)
-8. [Tách Postgres thành 2 instance](#8-tách-postgres-thành-2-instance)
-
----
-
-## 1. Tách secret ra `.env`
-
-### Vấn đề
-Realm.json export từ Keycloak Admin Console mặc định nhúng plaintext: client secrets, admin password, SMTP password, IdP credentials. Commit nguyên xi vào git = leak hàng loạt credential.
-
-### Quyết định
-- Mọi secret → root `.env` (gitignore'd).
-- Realm JSON chỉ giữ `${VAR_NAME}` placeholder.
-- Custom entrypoint sed-replace placeholder TRƯỚC khi Keycloak parse → secrets được inject lúc runtime, không bao giờ ở rest trên disk dạng plaintext (trừ trong DB Keycloak sau import).
-
-### Kiến thức cốt lõi
-- **OAuth2 `client_secret`** là bearer credential. Leak = ai cũng đổi auth code → access token. Với client `confidential` có service account và quyền `realm-admin` (như `backend-admin-client`), leak ngang ngửa root password.
-- **Twelve-Factor App III**: config vs code. Config = thứ thay đổi giữa môi trường (dev/staging/prod). Secret thuộc config → không bao giờ hard-code.
-- **Keycloak placeholder substitution native** không reliable cross-version. Tự sed bulletproof.
-
-### Trade-off
-- ✅ Repo public không leak secret.
-- ✅ Rotate secret = sửa 1 dòng `.env`.
-- ❌ Sau import lần đầu, secret nằm trong DB Keycloak — rotate phải wipe + reimport (hoặc đổi qua Admin Console).
-- 🔄 **Bước tiếp**: dùng Vault / Doppler / AWS Secrets Manager + dynamic credentials thay file `.env`. `.env` là bước 1 hợp lý cho dev, không phải production-grade.
-
----
-
-## 2. TOTP enforce per-client cho ShopPay
-
-### Vấn đề
-ShopPay là ví điện tử — phải MFA. Nhưng bắt MFA toàn realm thì user mua hàng ecommerce cũng bị bắt → UX tệ. Cần **policy isolation theo app** dù dùng chung user pool.
-
-### Quyết định
-1. Tạo Authentication Flow `browser-shoppay`:
-   - **KHÔNG có `auth-cookie`** → silent SSO bị bypass cho client này.
-   - Subflow `shoppay-forms` REQUIRED: `auth-username-password-form` REQUIRED + `auth-otp-form` REQUIRED + `userSetupAllowed=true`.
-2. Bind flow đó vào client `shoppay-app` qua `authenticationFlowBindingOverrides.browser`.
-3. Các client khác (`nextjs-app`, `seller-workspace`) vẫn dùng flow `browser` mặc định → silent SSO + không TOTP.
-
-### Kiến thức cốt lõi
-- **Authentication Flow**: Keycloak modeled login như cây các "execution" với requirement `REQUIRED / ALTERNATIVE / CONDITIONAL / DISABLED`. ALTERNATIVE = cần ít nhất 1 ăn; REQUIRED = phải ăn.
-- **Client binding override**: 1 client có thể tự chọn flow riêng cho `browser`/`direct grant`/`reset credentials`/`docker auth` thay vì dùng default realm.
-- **`userSetupAllowed=true`**: nếu user chưa có credential (TOTP), authenticator triggers required action `CONFIGURE_TOTP` thay vì fail. Đây là magic bít cho UX setup-on-first-login.
-
-### Trade-off đã cân nhắc
-| Approach | Pros | Cons |
-|---|---|---|
-| **Bind flow per-client (đã chọn)** | Policy chỉ apply cho client cần | OTP add như user-level required action → bám user, mọi client login sau bị hỏi |
-| Step-up `acr_values` | Per-action MFA, UX best | Phức tạp setup, cần app-side code phức tạp |
-| Realm-level `verifyEmail` style | Đơn giản | Apply toàn realm, không isolate được |
-| Force `prompt=login` ở app | Không cần Keycloak setup | Re-auth password mỗi lần, UX kém |
-
-### Trade-off thực tế phải sống chung
-TOTP enforce per-client KHÔNG hoàn toàn isolate: 1 khi user setup TOTP cho ShopPay, required action `CONFIGURE_TOTP` đã hoàn thành, OTP credential bám user → các flow khác có check `Conditional 2FA` cũng có thể trigger. Đây không phải bug, là Keycloak design (credential = user attribute, không phải client attribute).
-
-### 🔄 Bước tiếp
-Step-up auth qua `acr_values=2` là solution chuẩn ngành: app chỉ request MFA khi sensitive op, Keycloak prompt OTP cho session đó, không persist user-level required action. Cần custom Authentication Flow trả `acr` claim khác nhau theo path đi qua + NextAuth track session AAL.
-
----
-
-## 3. SAML brokering qua realm thứ 2
-
-### Vấn đề
-Demo Identity Brokering pattern thật: nhân viên seller login bằng "tài khoản công ty" (Azure AD / Okta / Google Workspace SAML) thay vì tự tạo password trên Keycloak chính. Điều kiện: KHÔNG có Azure / Okta thật để test.
+# PLAN - Kiến trúc và quyết định thiết kế
 
-### Quyết định
-Tạo realm thứ 2 (`acme-corp-realm`) trong cùng Keycloak instance, đóng vai **mock company IdP**. Realm chính (`ecommerce-realm`) làm SAML SP (Service Provider) brokering tới realm phụ.
-
-```
-[browser] → seller-workspace → ecommerce-realm (broker)
-                                      ↓ SAML
-                               acme-corp-realm (IdP)
-                                      ↓
-                          john.doe / Acme@2024
-```
-
-### Kiến thức cốt lõi
-- **Identity Brokering**: Keycloak vừa là IdP (cho app) vừa là RP/SP (cho upstream IdP). App KHÔNG biết Google/SAML/LDAP tồn tại; Keycloak abstract đi.
-- **First Broker Login Flow**: khi user lần đầu đến từ external IdP, Keycloak chạy flow này: review profile → create user / link existing → apply role mappers.
-- **SAML SP-IdP relationship**: SP (ecommerce-realm) có entity ID = `http://localhost:8080/realms/ecommerce-realm`, redirect URL = `/broker/acme-corp/endpoint`. IdP (acme-corp-realm) có 1 SAML client với `clientId` = SP's entityId, `redirectUris` includes broker endpoint.
-- **NameID format**: `emailAddress` để map `subject` của SAML assertion → `email` của Keycloak user.
-
-### Trade-off
-- ✅ Hoàn toàn tự động hoá được, không phụ thuộc account ngoài.
-- ✅ Demo cùng Keycloak vừa làm OIDC IdP (cho buyer login form) vừa làm SAML SP (cho enterprise) — chứng minh versatile.
-- ❌ KHÔNG ký assertion (`signAssertions=false`) → tránh chicken-and-egg về cert sync giữa 2 realm. Production phải sign + verify với cert chain thật.
-- ❌ Mock realm nằm cùng Keycloak instance → không reflect setup thật (2 organizations khác nhau, 2 instance khác nhau, network giữa cách nhau qua internet).
+Tài liệu này giải thích "vì sao" hệ thống được thiết kế như hiện tại. Hướng dẫn chạy và demo nằm trong [README.md](README.md); danh sách việc còn lại nằm trong [TODO.md](TODO.md).
 
-### 🔄 Bước tiếp
-Replace `acme-corp-realm` mock bằng integration thật với 1 trong:
-- Azure AD Enterprise Application (free tier).
-- Auth0 / Okta dev tenant.
-- Self-host realm thứ 2 trên VPS riêng để mô phỏng cross-network.
+## 1. Mục tiêu
 
----
+Repo mô phỏng một hệ sinh thái ecommerce gồm 3 ứng dụng độc lập nhưng dùng chung danh tính:
 
-## 4. Cross-app payment với HMAC 2 chiều
+| Ứng dụng | Port | Mục đích |
+| --- | --- | --- |
+| `web-app` | 3000 | Marketplace cho buyer, seller và admin |
+| `seller-workspace` | 3100 | Back-office cho seller và nhân viên shop |
+| `shoppay` | 3200 | Ví điện tử, KYC, nạp tiền, thanh toán |
 
-### Vấn đề
-ecommerce checkout cần redirect user sang ShopPay để trừ ví, sau đó callback về với status. 2 service riêng biệt — query string trong URL có thể bị user tamper. Cần authenticate request 2 chiều mà KHÔNG dùng OIDC token (vì token có scope app-specific, dài, không phù hợp redirect).
+Keycloak đóng vai trò IdP trung tâm cho SSO, MFA, SAML brokering, role/group mapping và Single Logout.
 
-### Quyết định
-HMAC-SHA256 với shared secret `MERCHANT_HMAC_SECRET`:
-- **Outbound** (ecommerce → ShopPay): `?merchant&orderId&amount&returnUrl&nonce` + `sig = HMAC(sorted_fields, secret)`.
-- **Return** (ShopPay → ecommerce): `?orderId&status&txnId` + `sig = HMAC(those_fields, secret)`.
-- ShopPay re-verify sig trên server action (chống user sửa form), idempotent dedupe theo `external_ref = "merchant:orderId"`.
+## 2. Ranh giới kiến trúc
 
-### Kiến thức cốt lõi
-- **HMAC vs raw hash**: HMAC immune length-extension (xem PLAN cũ section TOTP/SHA-1).
-- **Sort fields trước khi hash**: 2 bên ký cùng input. Map iteration order không guaranteed.
-- **`crypto.timingSafeEqual`**: chống timing attack khi compare sig.
-- **Nonce**: chống replay attack — server có thể track nonce đã dùng (TODO chưa wire).
-- **Idempotency**: thanh toán phải idempotent qua dedupe key (`merchant:orderId`) — user F5 không trừ ví 2 lần.
+Hệ thống tách 3 lớp rõ ràng:
 
-### Trade-off
-- ✅ Đơn giản, không phụ thuộc OIDC token, share giữa 2 service.
-- ✅ Verify ở cả page render (UX warning) lẫn server action (security).
-- ❌ Shared secret = symmetric → cả 2 bên đều có thể giả forge. Production B2B PSP dùng RSA signature (PSP có private key, merchant verify với public).
-- ❌ Nonce chưa được track (state-less) → vẫn có thể replay trong window.
+- Identity plane: Keycloak realm `ecommerce-realm`, mock enterprise realm `acme-corp-realm`, roles, groups, auth flows, IdP brokering.
+- App plane: 3 Next.js app dùng NextAuth v4, mỗi app có cookie riêng để không đè lên nhau trên `localhost`.
+- Data plane: `postgres-keycloak` nội bộ cho Keycloak và `postgres-app` expose `:5432` cho DB ứng dụng.
 
-### 🔄 Bước tiếp
-- Lưu nonce đã dùng vào DB → reject duplicate.
-- Đổi sang RSA-SHA256 cho "real PSP" pattern (ShopPay private key, ecommerce verify).
-- Idle timeout cho payment URL (`exp` claim trong sig payload).
+Quyết định tách Postgres giúp tránh trộn lẫn lifecycle: reset Keycloak realm không đồng nghĩa với reset dữ liệu app, và ngược lại.
 
----
+## 3. Secrets và realm import
 
-## 5. Refresh token rotation trong NextAuth
+Realm export từ Keycloak thường nhúng plaintext client secret. Repo này không commit secret trực tiếp trong realm JSON:
 
-### Vấn đề
-Keycloak default access token TTL = 5 phút. NextAuth không tự refresh. Sau 5 phút user chưa logout, mọi request đến Keycloak Admin API (KYC approve, role mgmt) sẽ fail vì token expired.
+- Root `.env` chứa secret runtime.
+- `keycloak/ecommerce-realm.json` và `keycloak/acme-corp-realm.json` dùng placeholder `${VAR_NAME}`.
+- `keycloak/entrypoint.sh` resolve placeholder trước khi Keycloak import realm.
+- `scripts/bootstrap.sh` sinh secret và sync `.env` cho 3 app.
 
-### Quyết định
-Trong `jwt` callback của NextAuth, kiểm tra `Date.now() > token.accessTokenExpires - 60s` → gọi Keycloak `/token` với `grant_type=refresh_token` + `refresh_token` cũ → cập nhật token mới + nonce nếu Keycloak rotate refresh token.
+Trade-off: `.env` phù hợp local demo, không phải production-grade. Production nên dùng Vault, Doppler, AWS Secrets Manager hoặc secret của orchestrator.
 
-```ts
-const expires = token.accessTokenExpires as number | undefined;
-if (expires && Date.now() < expires - 60_000) return token;
-return await refreshAccessToken(token);
-```
+## 4. OIDC SSO giữa 3 app
 
-Nếu refresh fail (refresh token revoked / Keycloak session đã chết) → set `token.error = "RefreshAccessTokenError"`. Client-side thấy error → force re-login.
+Mỗi app là một confidential OIDC client riêng:
 
-### Kiến thức cốt lõi
-- **Access token vs refresh token**: access ngắn hạn (5 min) cho API call. Refresh dài hạn (30 min default) chỉ để xin access mới — KHÔNG đi chung mọi request.
-- **Refresh token rotation**: Keycloak có thể trả refresh token mới mỗi lần refresh (chống reuse), nếu config `revoke_refresh_token=true` ở client.
-- **NextAuth JWT cookie**: stateless, không có DB backing. Để invalidate session thật sự (không phải chỉ chờ token expire) cần custom logic — dùng `events.signOut` gọi Keycloak `/logout`, hoặc backchannel.
+- `nextjs-app` cho `web-app`.
+- `seller-workspace` cho back-office.
+- `shoppay-app` cho ví điện tử.
 
-### Trade-off
-- ✅ User không bị logout sau 5 phút khi đang dùng app.
-- ✅ Refresh token rotation = security best practice (compromise của 1 token cũ không tái sử dụng được).
-- ❌ Refresh logic chạy ở server side → mỗi page load có potential extra request đến Keycloak. Cache hit ratio quan trọng.
-- ❌ NextAuth không trigger refresh proactive (chỉ lazy lúc page request) → API call ngay khi access token vừa expire có thể fail trước khi callback chạy.
+Mỗi app dùng NextAuth JWT session. Cookie được đặt tên riêng:
 
----
+- `ecommerce.session-token`
+- `seller-workspace.session-token`
+- `shoppay.session-token`
 
-## 6. Frontchannel logout vs Backchannel
+Lý do: cả 3 app chạy trên `localhost` với port khác nhau. Nếu dùng cookie mặc định của NextAuth, cookie có thể đè lên nhau và làm sai session.
 
-### Vấn đề
-Logout 1 app (ecommerce) phải invalidate session ở 2 app khác (seller-workspace, ShopPay) cùng SSO. Không thì user logout xong vẫn còn session ở các app khác.
+## 5. Refresh token rotation và stale session
 
-### Quyết định: Frontchannel (chọn) vs Backchannel (defer)
+Keycloak access token ngắn hạn. NextAuth không tự refresh, nên mỗi app có `lib/refreshAccessToken.ts`.
 
-| | Frontchannel | Backchannel |
-|---|---|---|
-| Cách hoạt động | Browser load 3 iframe ẩn, mỗi iframe gọi 1 client `/api/auth/frontchannel-logout` (GET) → app clear cookie | Keycloak POST `logout_token` JWT trực tiếp tới mỗi client `/api/auth/backchannel-logout` (server-to-server) |
-| Phụ thuộc | Browser (3rd-party cookie phải work) | Network (Keycloak phải reach client từ server side) |
-| Invalidation guarantee | Tốt khi browser cooperative; fail nếu browser block 3rd-party cookie hoặc tab đang đóng | Strong, không phụ thuộc browser |
-| Implementation | Đơn giản: 1 GET endpoint xoá cookie | Phức tạp: verify JWT signature, store revoked sid trong DB, check trong session callback |
+Luôn xử lý 3 trường hợp:
 
-Demo này chọn frontchannel vì:
-- Đủ tốt cho `localhost` dev (cùng eTLD+1).
-- Setup cấu hình client + endpoint = vài phút.
-- Backchannel cần DB revoked-sid table + signed JWT verification = 1-2h code đáng để dành cho production.
+- Access token còn hạn: giữ nguyên.
+- Gần hết hạn: gọi Keycloak token endpoint với `grant_type=refresh_token`.
+- Refresh fail do `invalid_grant`, `Session not active`, revoke session: đánh dấu `RefreshAccessTokenError`.
 
-### Trade-off
-- ✅ Frontchannel hoạt động cho 90% use case demo.
-- ❌ Browser block 3rd-party cookie (Safari ITP, Brave default, Firefox ETP strict) → iframe không clear cookie được.
-- 🔄 **Bước tiếp**: production switch sang backchannel chuẩn — JWT logout token verify, DB revoked sid list, NextAuth `session` callback consult list.
+Sau fix mới, app không refresh lặp vô hạn và không ném `console.error` trong server render gây Next dev overlay. Session callback coi token lỗi như logged-out, proxy cũng redirect về signin nếu gặp stale JWT.
 
----
+## 6. ShopPay MFA per-client
 
-## 7. Sync `user_profile` vs Event Listener SPI
+ShopPay cần bảo mật cao hơn marketplace. Thay vì bắt TOTP toàn realm, repo bind authentication flow riêng cho client `shoppay-app`:
 
-### Vấn đề
-App cần biết user info (email, name, roles) cho audit log, owner_id, business logic. Gọi Keycloak Admin API mỗi request = chậm + tải Keycloak.
+- Flow `browser-shoppay`.
+- Không dựa vào `auth-cookie` silent login như client thường.
+- Username/password và OTP là required trong flow ShopPay.
+- `userSetupAllowed=true` để user chưa có TOTP được setup lần đầu.
 
-### Quyết định: Sync khi login (chọn) vs Event Listener SPI (defer)
+Trade-off: đây là client-specific MFA enforcement, không phải step-up theo từng action. Production có thể nâng cấp sang ACR/AMR step-up: chỉ yêu cầu MFA khi topup lớn, pay, đổi PIN, rút tiền.
 
-| | Sync khi login | Event Listener SPI |
-|---|---|---|
-| Cách | NextAuth `jwt` callback gọi `syncUserProfile()` upsert vào DB app | Keycloak emit event (UserRegistered/UserUpdated/UserDeleted) → SPI listener notify app DB |
-| Implementation | 1 file TS, ~30 dòng | Java module, build jar, extend Keycloak Docker image, deploy `/opt/keycloak/providers/`, register SPI |
-| Coverage | User CRUD ngoài luồng login (admin xoá user) → app DB stale | Real-time, mọi event |
-| Maintenance | Cao: stale data nếu user không login lâu | Cao: Java deps, Keycloak version compat |
+## 7. SAML brokering với `acme-corp-realm`
 
-Demo chọn sync-khi-login vì:
-- 90% use case OK (user không login = không cần data ở app DB).
-- Pure TypeScript, không thêm Java toolchain.
-- Stale data tối đa = thời gian giữa 2 lần login user, acceptable cho non-critical app.
+Để demo B2B identity brokering mà không cần Azure AD/Okta thật, repo dùng realm thứ hai `acme-corp-realm` làm mock company IdP.
 
-### Trade-off
-- ✅ Implementation đơn giản, debug bằng Node.
-- ❌ Admin xoá user trong Keycloak → row `user_profile` còn lại trong DB app cho đến khi cleanup tay.
-- 🔄 **Bước tiếp**: SPI Java khi cần tight consistency (vd compliance: user yêu cầu xoá data theo GDPR, phải xoá cross-system trong vài phút).
+Luồng đi như sau:
 
----
+1. User vào `seller-workspace`.
+2. Keycloak `ecommerce-realm` hiện nút "Sign in with Acme Corp".
+3. Browser sang `acme-corp-realm` qua SAML.
+4. Acme xác thực user và POST SAML Response về broker endpoint.
+5. `ecommerce-realm` tạo/link user và mapper role `seller`.
 
-## 8. Tách Postgres thành 2 instance
+Production cần bật signed assertions, cert rotation và metadata endpoint từ IdP thật.
 
-### Vấn đề
-Ban đầu 1 Postgres chứa cả Keycloak data lẫn 3 app DB. Wipe Keycloak DB phải tránh wipe ecommerce/seller_workspace/shoppay → script phức tạp + nguy hiểm.
+## 8. Cross-app payment với HMAC
 
-### Quyết định
-2 service Postgres riêng:
-- `postgres-keycloak`: chỉ Keycloak, không expose port → security tốt hơn.
-- `postgres-app`: chứa 3 DB app, expose `:5432` cho dev (drizzle-kit chạy từ host).
+`web-app` redirect sang `shoppay` để thanh toán. Query string có thể bị user sửa, nên hai app ký payload bằng HMAC-SHA256 với `MERCHANT_HMAC_SECRET`.
 
-2 volume riêng → wipe 1 không đụng cái kia.
+Pattern:
 
-### Trade-off
-- ✅ Wipe Keycloak (mỗi lần đổi realm.json) không mất data app.
-- ✅ Postgres Keycloak không expose → giảm attack surface.
-- ❌ 2 container = ~+150MB RAM. Không vấn đề cho dev.
-- ❌ App schema không thể JOIN với Keycloak schema (đúng intent: app chỉ thấy `user_profile` cache).
+- Ecommerce tạo payment URL với `merchant`, `orderId`, `amount`, `returnUrl`, `nonce`, `sig`.
+- ShopPay verify signature khi render và verify lại trong server action.
+- ShopPay trừ ví idempotent theo external ref `merchant:orderId`.
+- Return URL về ecommerce cũng có signature riêng để update order.
 
----
+Trade-off: HMAC là symmetric secret; nếu một bên leak secret thì bên đó có thể forge. Production PSP thường dùng asymmetric signature.
 
-## Quy tắc thiết kế chung (rút ra từ project)
+## 9. KYC và giao dịch giá trị cao
 
-1. **Mọi instruction chứa secret phải đọc từ `.env`, không bao giờ commit**.
-2. **Realm config phải reproducible**: chạy `bash scripts/reset.sh` ở máy mới phải ra kết quả y hệt máy cũ. Không có "config drift" giữa các môi trường.
-3. **Defense in depth**: route guard (proxy.ts) + action guard (server action). Bypass 1 lớp không đủ để leak.
-4. **Audit mọi sensitive action**: topup, pay, kyc.approve/reject, role.assign/revoke. 1 dòng `await logAudit(...)` ở cuối server action.
-5. **Idempotency**: mọi server action có thể được trigger 2 lần (user F5, network retry). Dedupe ở layer thấp nhất (DB unique constraint hoặc `onConflictDoUpdate`).
-6. **Cookie name riêng cho mỗi app**: 3 app trên `localhost` không đè cookie nhau. Trong prod (sub-domain khác nhau) không cần, nhưng cookie name riêng vẫn là good practice.
-7. **HMAC 2 chiều cho cross-service redirect**: không bao giờ trust query string.
+Business rule: giao dịch ShopPay trên 5.000.000 VND cần KYC.
 
----
+Ban đầu action chỉ check `session.user.roles.includes("kyc-verified")`. Cách này sai UX sau khi admin approve vì role mới đã có trong Keycloak nhưng JWT cookie cũ chưa có claim mới.
 
-Xem [todo.md](todo.md) cho status các item, [README.md](README.md) cho hướng dẫn vận hành + test plan A-L.
+Quyết định mới:
+
+- `approveKyc` cập nhật DB và luôn gọi Keycloak Admin API gán role, kể cả khi document đã `approved`.
+- `topup` > 5 triệu check 3 nguồn: role trong session, role mới nhất từ Keycloak Admin API, và DB `kyc_documents.status = approved`.
+- User được nạp tiền ngay sau khi duyệt KYC, không cần logout/login lại.
+
+## 10. Frontchannel logout và giới hạn của browser
+
+Keycloak frontchannel logout gọi iframe ẩn tới mỗi client:
+
+- `http://localhost:3000/api/auth/frontchannel-logout`
+- `http://localhost:3100/api/auth/frontchannel-logout`
+- `http://localhost:3200/api/auth/frontchannel-logout`
+
+Endpoint xoá cookie NextAuth và các cookie transient (`csrf`, `callback`, `pkce`, `state`, `nonce`). Để tránh browser chặn Set-Cookie trong iframe làm tab active vẫn còn session, endpoint còn ghi marker `localStorage`. Client component `SingleLogoutWatcher` lắng nghe marker và gọi `signOut({ redirect: false })`, sau đó reload tab.
+
+Trade-off: frontchannel vẫn phụ thuộc browser. Production nên có backchannel logout: verify `logout_token`, lưu revoked `sid` trong DB, và check trong session/proxy.
+
+## 11. User profile cache
+
+Mỗi app có bảng `user_profile` để cache sub, email, name, roles, groups khi login. Mục tiêu là giảm gọi Keycloak Admin API trên mỗi request và có đủ thông tin cho audit/business logic.
+
+Trade-off: data có thể stale nếu admin sửa user ngoài luồng login. Nếu cần consistency mạnh, nên viết Keycloak Event Listener SPI hoặc webhook để sync UserUpdated/UserDeleted.
+
+## 12. Hướng production
+
+Những thay đổi nên làm nếu đưa ra môi trường thật:
+
+- HTTPS và cookie `secure: true`.
+- Backchannel logout thay cho frontchannel-only.
+- Secrets manager thay `.env`.
+- Drizzle migration versioned thay `db:push`.
+- Nonce replay table cho payment URL.
+- Step-up auth bằng ACR/AMR cho ShopPay.
+- Integration test cho SSO, SLO, KYC, HMAC payment.
