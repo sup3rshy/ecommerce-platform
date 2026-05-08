@@ -136,7 +136,7 @@ export default async function KycPage() {
         <code className="code-inline">staff-finance</code>) sẽ duyệt qua{" "}
         <a href="/kyc/admin">/kyc/admin</a> → khi approve, ShopPay tự gọi Keycloak
         Admin API gán role <code className="code-inline">kyc-verified</code> cho bạn.
-        Bạn cần logout/login lại để token có role mới.
+        Giao dịch giá trị cao được kiểm tra lại phía server nên không cần logout/login lại.
       </div>
     </div>
   );

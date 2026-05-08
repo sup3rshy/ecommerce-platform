@@ -40,17 +40,19 @@ export async function approveKyc(formData: FormData) {
     .where(eq(kycDocuments.id, kycId))
     .limit(1);
   if (!doc) throw new Error("kyc not found");
-  if (doc.status === "approved") return; // idempotent
 
-  // 1. Update DB
-  await db
-    .update(kycDocuments)
-    .set({
-      status: "approved",
-      reviewedAt: new Date(),
-      reviewerNote: `Approved by ${session.user.name ?? session.user.id}`,
-    })
-    .where(eq(kycDocuments.id, kycId));
+  // 1. Update DB. Nếu hồ sơ đã approved, vẫn chạy bước gán role bên dưới để
+  // action idempotent và tự sửa case DB approved nhưng Keycloak role bị thiếu.
+  if (doc.status !== "approved") {
+    await db
+      .update(kycDocuments)
+      .set({
+        status: "approved",
+        reviewedAt: new Date(),
+        reviewerNote: `Approved by ${session.user.name ?? session.user.id}`,
+      })
+      .where(eq(kycDocuments.id, kycId));
+  }
 
   // 2. Gán role kyc-verified qua Admin API
   await assignRealmRoleToUser(doc.userId, "kyc-verified");

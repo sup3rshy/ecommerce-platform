@@ -208,6 +208,18 @@ export async function assignRealmRoleToUser(userId: string, roleName: string): P
   }
 }
 
+export async function userHasRealmRole(userId: string, roleName: string): Promise<boolean> {
+  try {
+    const config = getKeycloakAdminConfig();
+    const accessToken = await getAdminAccessToken(config);
+    const roles = await getUserRealmRoles(config, accessToken, userId);
+    return roles.includes(roleName);
+  } catch (error) {
+    console.warn(`Cannot verify Keycloak role '${roleName}' for user '${userId}'.`, error);
+    return false;
+  }
+}
+
 export async function getKeycloakUserCount(): Promise<number | null> {
   try {
     const config = getKeycloakAdminConfig();
