@@ -60,21 +60,35 @@ flowchart TB
 
 ## Yêu cầu
 
-- Docker và Docker Compose.
-- Node.js 22 LTS.
-- Bash shell. WSL/Linux/Mac đều dùng được.
+- Docker Desktop (bật sẵn).
+- Node.js **22 LTS** (`node -v` phải hiện `v22.x`).
+- Một trong hai:
+  - **Windows**: PowerShell 5+ (có sẵn) hoặc pwsh 7.
+  - **Mac / Linux / WSL**: Bash.
 
 ## Setup nhanh
+
+### Windows (PowerShell)
+
+```powershell
+git clone <repo>
+cd ecommerce-platform
+powershell scripts/setup.ps1
+npm run dev
+```
+
+### Mac / Linux / WSL (Bash)
 
 ```bash
 git clone <repo>
 cd ecommerce-platform
-
-bash scripts/bootstrap.sh
-bash scripts/reset.sh
-npm install
+bash scripts/bootstrap.sh   # sinh .env
+bash scripts/reset.sh       # docker up + push DB schema
+npm install                  # root + 3 app (tự chạy postinstall)
 npm run dev
 ```
+
+> **Lưu ý**: `npm install` ở root sẽ tự install cả 3 sub-app (web-app, seller-workspace, shoppay) nhờ `postinstall` script.
 
 Sau khi chạy:
 
