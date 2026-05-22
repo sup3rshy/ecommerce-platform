@@ -17,11 +17,7 @@ else
 fi
 
 echo "→ wipe + up..."
-$DOCKER compose down
-$DOCKER volume rm ecommerce-platform_postgres_keycloak_data 2>/dev/null || true
-$DOCKER volume rm ecommerce-platform_postgres_app_data      2>/dev/null || true
-# Volume cũ từ thời chưa tách Postgres
-$DOCKER volume rm ecommerce-platform_postgres_data          2>/dev/null || true
+$DOCKER compose down -v
 $DOCKER compose up -d
 
 echo "→ đợi Keycloak ready..."

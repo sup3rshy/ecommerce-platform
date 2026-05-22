@@ -29,3 +29,13 @@ Thumbs.db
 
 # Docker
 postgres_data/
+
+# Nested duplicate (legacy)
+web-app/web-app/
+
+# Backup SQL dumps
+backup-app-*.sql
+
+# PIL generated images
+*.png
+!public/**/*.png
