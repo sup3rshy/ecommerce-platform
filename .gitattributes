@@ -1,0 +1,7 @@
+# Shell scripts luôn giữ LF, tránh lỗi trên bash/WSL
+*.sh text eol=lf
+*.bash text eol=lf
+entrypoint.sh text eol=lf
+
+# SQL init scripts
+*.sql text eol=lf
