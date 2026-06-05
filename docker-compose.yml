@@ -10,7 +10,7 @@ services:
       - postgres_keycloak_data:/var/lib/postgresql/data
     # KHÔNG expose port: Keycloak nói chuyện qua docker network thôi.
 
-  # === Postgres dành cho ecommerce / seller_workspace / shoppay ===
+  # === Postgres dành cho ecommerce / seller_workspace / shoppay / shopfood ===
   postgres-app:
     image: postgres:15
     environment:
@@ -38,6 +38,8 @@ services:
       NEXTJS_APP_CLIENT_SECRET: ${NEXTJS_APP_CLIENT_SECRET}
       SELLER_WORKSPACE_CLIENT_SECRET: ${SELLER_WORKSPACE_CLIENT_SECRET}
       SHOPPAY_CLIENT_SECRET: ${SHOPPAY_CLIENT_SECRET}
+      SHOPFOOD_CLIENT_SECRET: ${SHOPFOOD_CLIENT_SECRET}
+      ADMIN_PORTAL_CLIENT_SECRET: ${ADMIN_PORTAL_CLIENT_SECRET}
       BACKEND_ADMIN_CLIENT_SECRET: ${BACKEND_ADMIN_CLIENT_SECRET}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       GOOGLE_IDP_CLIENT_ID: ${GOOGLE_IDP_CLIENT_ID}
@@ -47,45 +49,15 @@ services:
     volumes:
       # Keycloak directory-import yêu cầu tên file = {realm-name}-realm.json
       - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/ecommerce-realm-realm.json:ro
-      - ./keycloak/acme-corp-realm.json:/opt/keycloak/data/import-template/acme-corp-realm-realm.json:ro
       - ./keycloak/entrypoint.sh:/custom-entrypoint.sh:ro
     depends_on:
       - postgres-keycloak
 
-  # === FreeIPA — Domain Controller (LDAP + Kerberos) ===
-  # Heavy infra, KHÔNG tự start với `compose up` thường.
-  # Chạy có chủ ý: docker compose --profile domain up -d freeipa
-  # Mất ~5-10 phút lần đầu provision. RAM ~1-1.5GB.
-  # Sau khi up, vào Keycloak Admin Console wire LDAP federation (xem README).
-  freeipa:
-    image: freeipa/freeipa-server:rocky-9
-    profiles: ["domain"]
-    hostname: ipa.example.test
-    environment:
-      IPA_SERVER_IP: 127.0.0.1
-    command:
-      - "ipa-server-install"
-      - "--unattended"
-      - "--realm=EXAMPLE.TEST"
-      - "--domain=example.test"
-      - "--ds-password=DirectoryManager@2024"
-      - "--admin-password=Admin@2024"
-      - "--no-ntp"
-      - "--no-host-dns"
-    ports:
-      - "389:389"     # LDAP (cho Keycloak federation)
-      - "636:636"     # LDAPS
-      - "443:443"     # FreeIPA web UI
-      - "88:88/tcp"   # Kerberos KDC
-      - "88:88/udp"
-    volumes:
-      - freeipa_data:/data
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=0
-    cap_add:
-      - SYS_TIME
-    restart: unless-stopped
+  # === Domain Controller (Active Directory) — KHÔNG chạy trong compose ===
+  # DC là Windows Server (AD DS) chạy ở máy local (VMware), kết nối tới VPS qua
+  # Tailscale. Keycloak federate vào AD qua LDAP để cấp danh tính cho nhân sự
+  # nền tảng (admin). Cấu hình LDAP_* trong .env và User Federation trong
+  # Keycloak — xem PLAN.md mục Identity.
 
   nginx:
     image: nginx:1.27
@@ -101,4 +73,3 @@ services:
 volumes:
   postgres_keycloak_data:
   postgres_app_data:
-  freeipa_data:

@@ -29,17 +29,41 @@ until curl -sf http://localhost:8080/realms/ecommerce-realm/.well-known/openid-c
   sleep 2
 done
 
-echo "→ verify 3 DB app đã được Postgres init tự tạo..."
+echo "→ verify DB app đã được Postgres init tự tạo..."
 APP_PG=$($DOCKER ps -qf "name=postgres-app" | head -1)
-$DOCKER exec -i "$APP_PG" psql -U admin -d postgres -c "\l" | grep -E '^ (ecommerce|seller_workspace|shoppay)' \
+$DOCKER exec -i "$APP_PG" psql -U admin -d postgres -c "\l" | grep -E '^ (ecommerce|seller_workspace|shoppay|shopfood|admin_portal)' \
   || { echo "✗ DB app chưa được tạo, check init-app-dbs.sql"; exit 1; }
 
-echo "→ push schema..."
-(cd web-app          && npx drizzle-kit push)
-(cd seller-workspace && npm run db:push)
-(cd shoppay          && npm run db:push)
+echo "→ push schema (5 app đã triển khai)..."
+(cd shop-ecommerce && npx drizzle-kit push)
+(cd shop-sell      && npm run db:push)
+(cd shop-pay       && npm run db:push)
+# shop-food cần deps trước khi push (Phase 2). Bỏ qua nếu chưa cài để không abort reset.
+if [ -d shop-food/node_modules ]; then
+  (cd shop-food && npm run db:push)
+else
+  echo "  (shop-food chưa cài deps — bỏ qua push. Chạy: cd shop-food && npm install && npm run db:push && npm run db:seed)"
+fi
+# admin-portal (Phase 3) — DB riêng admin_portal chỉ cho audit log.
+if [ -d admin-portal/node_modules ]; then
+  (cd admin-portal && npm run db:push)
+else
+  echo "  (admin-portal chưa cài deps — bỏ qua push. Chạy: cd admin-portal && npm install && npm run db:push)"
+fi
 
-echo "→ seed ecommerce sample data..."
-(cd web-app && npx tsx db/seed.ts) || echo "  (seed skip — install tsx hoặc đợi seller1 login)"
-
-echo "✓ Done. Login http://localhost:3000 / 3100 / 3200"
+# Phase 1: catalog do ShopSell quản lý (source of truth). ShopEcommerce chỉ là
+# bản sao đọc, được đồng bộ qua /api/internal/catalog/*. Không seed catalog trực
+# tiếp vào ShopEcommerce nữa — storefront trống cho tới khi seller thêm sản phẩm.
+echo
+echo "✓ Done. Tiếp theo:"
+echo "    npm run dev"
+echo
+echo "  Để có catalog mẫu (chọn 1):"
+echo "    A. Login seller1 ở http://localhost:3100 -> vào /products -> thêm sản phẩm (tự đồng bộ sang :3000)."
+echo "    B. Login seller1 1 lần ở :3100 (để sync user_profile), rồi chạy:"
+echo "         npm --prefix shop-sell run db:seed          # seed catalog mẫu cho seller1"
+echo "         npm --prefix shop-sell run catalog:backfill # đẩy sang storefront :3000 (cần :3000 đang chạy)"
+echo
+echo "  Thực đơn mẫu ShopFood: npm --prefix shop-food run db:seed"
+echo
+echo "  URL: http://localhost:3000 (storefront) | :3100 (ShopSell) | :3200 (ShopPay) | :3300 (ShopFood)"

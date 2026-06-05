@@ -99,8 +99,11 @@
       {
         "id": "d4403deb-5417-4ecd-b577-394af160275c",
         "name": "seller",
-        "description": "Người bán hàng",
-        "composite": false,
+        "description": "Chủ shop ShopSell (xin từ buyer); composite gồm staff (-> buyer)",
+        "composite": true,
+        "composites": {
+          "realm": ["staff"]
+        },
         "clientRole": false,
         "containerId": "1bfa2f2e-64ce-45db-ad56-137c371b3574",
         "attributes": {}
@@ -115,37 +118,63 @@
         "attributes": {}
       },
       {
-        "name": "staff-warehouse",
-        "description": "Nhân viên kho - quản lý tồn kho, vận đơn",
+        "name": "staff",
+        "description": "Nhân viên shop, gắn với đúng 1 shop qua group; composite gồm buyer",
+        "composite": true,
+        "composites": {
+          "realm": ["buyer"]
+        },
+        "clientRole": false,
+        "attributes": {}
+      },
+      {
+        "name": "food-seller",
+        "description": "Chủ nhà hàng ShopFood (xin từ buyer); composite gồm buyer",
+        "composite": true,
+        "composites": {
+          "realm": ["buyer"]
+        },
+        "clientRole": false,
+        "attributes": {}
+      },
+      {
+        "name": "ecommerce_admin",
+        "description": "Quản trị mảng Ecommerce (ShopEcommerce + ShopSell)",
         "composite": false,
         "clientRole": false,
         "attributes": {}
       },
       {
-        "name": "staff-cs",
-        "description": "Nhân viên CSKH - chat, hỗ trợ khách",
+        "name": "food_admin",
+        "description": "Quản trị nền tảng ShopFood",
         "composite": false,
         "clientRole": false,
         "attributes": {}
       },
       {
-        "name": "staff-finance",
-        "description": "Nhân viên tài chính - xem báo cáo doanh thu",
+        "name": "pay_admin",
+        "description": "Quản trị nền tảng ShopPay (gồm quyền duyệt KYC kyc-verified)",
         "composite": false,
         "clientRole": false,
         "attributes": {}
       },
       {
         "name": "wallet-user",
-        "description": "Người dùng ví ShopPay",
-        "composite": false,
+        "description": "Người dùng ví ShopPay (chỉ buyer); composite gồm buyer",
+        "composite": true,
+        "composites": {
+          "realm": ["buyer"]
+        },
         "clientRole": false,
         "attributes": {}
       },
       {
         "name": "kyc-verified",
-        "description": "Đã xác minh KYC - giao dịch >5 triệu/lần",
-        "composite": false,
+        "description": "Đã xác minh KYC - giao dịch >5 triệu/lần; composite gồm wallet-user (-> buyer)",
+        "composite": true,
+        "composites": {
+          "realm": ["wallet-user"]
+        },
         "clientRole": false,
         "attributes": {}
       }
@@ -469,7 +498,30 @@
       ]
     }
   },
-  "groups": [],
+  "groups": [
+    {
+      "name": "store-demo-1",
+      "path": "/store-demo-1",
+      "attributes": {
+        "storeId": ["1"],
+        "storeName": ["Demo Shop 1"]
+      },
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    },
+    {
+      "name": "store-demo-2",
+      "path": "/store-demo-2",
+      "attributes": {
+        "storeId": ["2"],
+        "storeName": ["Demo Shop 2"]
+      },
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    }
+  ],
   "defaultRole": {
     "id": "b56d5ac7-a631-4f12-9219-d873e87dd77e",
     "name": "default-roles-ecommerce-realm",
@@ -552,6 +604,8 @@
     },
     {
       "username": "buyer1",
+      "firstName": "Buyer",
+      "lastName": "One",
       "email": "buyer1@test.com",
       "enabled": true,
       "emailVerified": true,
@@ -567,7 +621,45 @@
       ]
     },
     {
+      "username": "buyer2",
+      "firstName": "Buyer",
+      "lastName": "Two",
+      "email": "buyer2@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Buyer2@2024",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "buyer"
+      ]
+    },
+    {
+      "username": "buyer3",
+      "firstName": "Buyer",
+      "lastName": "Three",
+      "email": "buyer3@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Buyer3@2024",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "buyer"
+      ]
+    },
+    {
       "username": "seller1",
+      "firstName": "Seller",
+      "lastName": "One",
       "email": "seller1@test.com",
       "enabled": true,
       "emailVerified": true,
@@ -580,10 +672,15 @@
       ],
       "realmRoles": [
         "seller"
+      ],
+      "groups": [
+        "/store-demo-1"
       ]
     },
     {
       "username": "admin1",
+      "firstName": "Admin",
+      "lastName": "One",
       "email": "admin1@test.com",
       "enabled": true,
       "emailVerified": true,
@@ -599,55 +696,108 @@
       ]
     },
     {
-      "username": "warehouse1",
-      "email": "warehouse1@test.com",
+      "username": "staff1",
+      "firstName": "Staff",
+      "lastName": "One",
+      "email": "staff1@test.com",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "Warehouse1@2024",
+          "value": "Staff1@2024",
           "temporary": false
         }
       ],
       "realmRoles": [
-        "staff-warehouse"
+        "staff"
+      ],
+      "groups": [
+        "/store-demo-1"
       ]
     },
     {
-      "username": "cs1",
-      "email": "cs1@test.com",
+      "username": "seller2",
+      "firstName": "Seller",
+      "lastName": "Two",
+      "email": "seller2@test.com",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "Cs1@2024",
+          "value": "Seller2@2024",
           "temporary": false
         }
       ],
       "realmRoles": [
-        "staff-cs"
+        "seller"
+      ],
+      "groups": [
+        "/store-demo-2"
       ]
     },
     {
-      "username": "finance1",
-      "email": "finance1@test.com",
+      "username": "staff2",
+      "firstName": "Staff",
+      "lastName": "Two",
+      "email": "staff2@test.com",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "Finance1@2024",
+          "value": "Staff2@2024",
           "temporary": false
         }
       ],
       "realmRoles": [
-        "staff-finance"
+        "staff"
+      ],
+      "groups": [
+        "/store-demo-2"
+      ]
+    },
+    {
+      "username": "food-seller1",
+      "firstName": "Food",
+      "lastName": "Seller",
+      "email": "food-seller1@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Foodseller1@2024",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "food-seller"
+      ]
+    },
+    {
+      "username": "kyc1",
+      "firstName": "Kyc",
+      "lastName": "One",
+      "email": "kyc1@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Kyc1@2024",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "kyc-verified"
       ]
     },
     {
       "username": "wallet1",
+      "firstName": "Wallet",
+      "lastName": "One",
       "email": "wallet1@test.com",
       "enabled": true,
       "emailVerified": true,
@@ -1108,6 +1258,104 @@
       "attributes": {
         "frontchannel.logout.url": "http://localhost:3200/api/auth/frontchannel-logout",
         "post.logout.redirect.uris": "http://localhost:3200##http://localhost:3200/"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ]
+    },
+    {
+      "clientId": "shopfood-app",
+      "name": "ShopFood",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SHOPFOOD_CLIENT_SECRET}",
+      "redirectUris": [
+        "http://localhost:3300",
+        "http://localhost:3300/",
+        "http://localhost:3300/api/auth/callback/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:3300"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "frontchannel.logout.url": "http://localhost:3300/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3300##http://localhost:3300/"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ]
+    },
+    {
+      "clientId": "admin-portal",
+      "name": "Admin Portal",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ADMIN_PORTAL_CLIENT_SECRET}",
+      "redirectUris": [
+        "http://localhost:3400",
+        "http://localhost:3400/",
+        "http://localhost:3400/api/auth/callback/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:3400"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "frontchannel.logout.url": "http://localhost:3400/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3400##http://localhost:3400/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -1982,35 +2230,6 @@
   "adminEventsDetailsEnabled": false,
   "identityProviders": [
     {
-      "alias": "acme-corp",
-      "displayName": "Sign in with Acme Corp (SAML)",
-      "providerId": "saml",
-      "enabled": true,
-      "trustEmail": true,
-      "storeToken": false,
-      "linkOnly": false,
-      "hideOnLogin": false,
-      "firstBrokerLoginFlowAlias": "first broker login",
-      "config": {
-        "singleLogoutServiceUrl": "http://localhost:8080/realms/acme-corp-realm/protocol/saml",
-        "singleSignOnServiceUrl": "http://localhost:8080/realms/acme-corp-realm/protocol/saml",
-        "entityId": "http://localhost:8080/realms/ecommerce-realm",
-        "idpEntityId": "http://localhost:8080/realms/acme-corp-realm",
-        "nameIDPolicyFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
-        "principalType": "SUBJECT",
-        "postBindingResponse": "true",
-        "postBindingAuthnRequest": "true",
-        "postBindingLogout": "true",
-        "validateSignature": "false",
-        "wantAssertionsSigned": "false",
-        "wantAssertionsEncrypted": "false",
-        "wantAuthnRequestsSigned": "false",
-        "signSpMetadata": "false",
-        "syncMode": "IMPORT",
-        "allowCreate": "true"
-      }
-    },
-    {
       "alias": "google",
       "displayName": "",
       "internalId": "29b1a407-f6b1-4f25-adc9-8839dd5e4eae",
@@ -2041,45 +2260,6 @@
       "config": {
         "syncMode": "INHERIT",
         "role": "buyer"
-      }
-    },
-    {
-      "name": "acme-corp-to-seller",
-      "identityProviderAlias": "acme-corp",
-      "identityProviderMapper": "oidc-hardcoded-role-idp-mapper",
-      "config": {
-        "syncMode": "INHERIT",
-        "role": "seller"
-      }
-    },
-    {
-      "name": "acme-corp-firstName",
-      "identityProviderAlias": "acme-corp",
-      "identityProviderMapper": "saml-user-attribute-idp-mapper",
-      "config": {
-        "syncMode": "INHERIT",
-        "attribute.name": "firstName",
-        "user.attribute": "firstName"
-      }
-    },
-    {
-      "name": "acme-corp-lastName",
-      "identityProviderAlias": "acme-corp",
-      "identityProviderMapper": "saml-user-attribute-idp-mapper",
-      "config": {
-        "syncMode": "INHERIT",
-        "attribute.name": "lastName",
-        "user.attribute": "lastName"
-      }
-    },
-    {
-      "name": "acme-corp-email",
-      "identityProviderAlias": "acme-corp",
-      "identityProviderMapper": "saml-user-attribute-idp-mapper",
-      "config": {
-        "syncMode": "INHERIT",
-        "attribute.name": "email",
-        "user.attribute": "email"
       }
     }
   ],

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="280" viewBox="0 0 400 280" role="img" aria-label="Món ăn">
+  <rect width="400" height="280" fill="#fff1f2"/>
+  <circle cx="200" cy="150" r="78" fill="#fecaca"/>
+  <circle cx="200" cy="150" r="58" fill="#fff"/>
+  <path d="M150 96c0-10 8-18 18-18h64c10 0 18 8 18 18" fill="none" stroke="#e11d48" stroke-width="6" stroke-linecap="round"/>
+  <rect x="196" y="60" width="8" height="40" rx="4" fill="#e11d48"/>
+  <text x="200" y="248" font-family="system-ui, sans-serif" font-size="20" fill="#9f1239" text-anchor="middle">ShopFood</text>
+</svg>

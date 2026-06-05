@@ -1,144 +1,179 @@
-# PLAN - Kiến trúc và quyết định thiết kế
+# PLAN - Kế hoạch xây dựng chi tiết
 
-Tài liệu này giải thích "vì sao" hệ thống được thiết kế như hiện tại. Hướng dẫn chạy và demo nằm trong [README.md](README.md); danh sách việc còn lại nằm trong [TODO.md](TODO.md).
+Tài liệu này là kế hoạch xây dựng theo từng phase. Mô tả dự án nằm trong [README.md](README.md); checklist nhiệm vụ nằm trong [TODO.md](TODO.md).
 
-## 1. Mục tiêu
+## Nguyên tắc thực thi
 
-Repo mô phỏng một hệ sinh thái ecommerce gồm 3 ứng dụng độc lập nhưng dùng chung danh tính:
+- Làm từ từ, từng phase, mỗi phase có deliverable và cách kiểm thử rõ ràng.
+- Không phá vỡ 3 app đang chạy khi thêm tính năng mới.
+- Phần phụ thuộc hạ tầng ngoài (Windows AD, Tailscale, VPS) tách thành phase riêng, làm sau khi phần app đã chắc.
+- Định danh nội bộ (OIDC client ID, tên DB, cookie) giữ ổn định; chỉ tên thư mục theo tên sản phẩm.
 
-| Ứng dụng | Port | Mục đích |
-| --- | --- | --- |
-| `web-app` | 3000 | Marketplace cho buyer, seller và admin |
-| `seller-workspace` | 3100 | Back-office cho seller và nhân viên shop |
-| `shoppay` | 3200 | Ví điện tử, KYC, nạp tiền, thanh toán |
+## Kiến trúc mục tiêu
 
-Keycloak đóng vai trò IdP trung tâm cho SSO, MFA, SAML brokering, role/group mapping và Single Logout.
+### Ứng dụng
 
-## 2. Ranh giới kiến trúc
+| App | Thư mục | Port | Client | DB | Vai trò chính |
+| --- | --- | --- | --- | --- | --- |
+| ShopEcommerce | `shop-ecommerce` | 3000 | `nextjs-app` | `ecommerce` | buyer, hiển thị catalog |
+| ShopSell | `shop-sell` | 3100 | `seller-workspace` | `seller_workspace` | seller/staff, quản lý sản phẩm |
+| ShopPay | `shop-pay` | 3200 | `shoppay-app` | `shoppay` | wallet-user, KYC, MFA |
+| ShopFood | `shop-food` | 3300 | `shopfood-app` | `shopfood` | buyer đặt món, food_admin |
+| Admin Portal | `admin-portal` | 3400 | `admin-portal` | `admin_portal` | admin / per-platform admin |
 
-Hệ thống tách 3 lớp rõ ràng:
+### Điều phối và hạ tầng
 
-- Identity plane: Keycloak realm `ecommerce-realm`, mock enterprise realm `acme-corp-realm`, roles, groups, auth flows, IdP brokering.
-- App plane: 3 Next.js app dùng NextAuth v4, mỗi app có cookie riêng để không đè lên nhau trên `localhost`.
-- Data plane: `postgres-keycloak` nội bộ cho Keycloak và `postgres-app` expose `:5432` cho DB ứng dụng.
+- Nginx (:8000) là điểm điều phối duy nhất. Không dùng Kong.
+- Toàn bộ app + Keycloak + Postgres + Nginx deploy trên một VPS DigitalOcean bằng Docker Compose.
+- Windows Server AD (DC) chạy ở máy local (VMware); VPS nối DC qua Tailscale.
 
-Quyết định tách Postgres giúp tránh trộn lẫn lifecycle: reset Keycloak realm không đồng nghĩa với reset dữ liệu app, và ngược lại.
+## Mô hình danh tính (cốt lõi)
 
-## 3. Secrets và realm import
+Hai nhóm người dùng, hai nguồn, hợp nhất trong realm `ecommerce-realm`:
 
-Realm export từ Keycloak thường nhúng plaintext client secret. Repo này không commit secret trực tiếp trong realm JSON:
+1. Khách hàng + người bán + nhân viên shop (`buyer`, `seller`, `staff`, `food-seller`, `wallet-user`, `kyc-verified` — composite role, xem CONTEXT.md mục 13): lưu trong Keycloak (PostgreSQL).
+2. Nhân sự nền tảng (`admin`, `ecommerce_admin`, `food_admin`, `pay_admin`): cấp trong Windows Server AD, đưa vào Keycloak qua LDAP user federation. Group AD map sang role.
 
-- Root `.env` chứa secret runtime.
-- `keycloak/ecommerce-realm.json` và `keycloak/acme-corp-realm.json` dùng placeholder `${VAR_NAME}`.
-- `keycloak/entrypoint.sh` resolve placeholder trước khi Keycloak import realm.
-- `scripts/bootstrap.sh` sinh secret và sync `.env` cho 3 app.
+Quy tắc:
 
-Trade-off: `.env` phù hợp local demo, không phải production-grade. Production nên dùng Vault, Doppler, AWS Secrets Manager hoặc secret của orchestrator.
+- DC chỉ là nguồn định danh. Phân quyền thực thi ở Keycloak (role) và ở từng app (guard).
+- Xoá user khỏi AD => mất quyền toàn hệ sinh thái. Cơ chế: access token TTL ngắn (vd 5 phút) + refresh kiểm tra lại với Keycloak; user bị xoá khỏi AD sẽ không federate được nên refresh thất bại => app coi như logged-out.
+- Lộ trình đăng nhập: Phase 4 dùng LDAP (nhập tài khoản AD trên trang login Keycloak). Phase 6 thêm Kerberos/SPNEGO để tự nhận diện từ máy domain-joined.
 
-## 4. OIDC SSO giữa 3 app
+## Lộ trình theo phase
 
-Mỗi app là một confidential OIDC client riêng:
+### Phase 0 — Tái cấu trúc & dọn dẹp (DONE)
 
-- `nextjs-app` cho `web-app`.
-- `seller-workspace` cho back-office.
-- `shoppay-app` cho ví điện tử.
+- Đổi tên thư mục theo tên sản phẩm; scaffold `shop-food`, `admin-portal`.
+- Thêm per-platform admin roles và 2 OIDC client vào realm; wire secret chain.
+- Gỡ Kong khỏi tài liệu; gỡ FreeIPA khỏi `docker-compose.yml` và xoá `scripts/freeipa-seed.sh`.
+- Xoá thư mục lồng thừa `shop-ecommerce/web-app/`.
+- Thêm placeholder `LDAP_*`, `CATALOG_SYNC_SECRET` vào `.env.example`.
 
-Mỗi app dùng NextAuth JWT session. Cookie được đặt tên riêng:
+### Phase 1 — ShopSell ↔ ShopEcommerce: tách DB + đồng bộ catalog
 
-- `ecommerce.session-token`
-- `seller-workspace.session-token`
-- `shoppay.session-token`
+Mục tiêu: giữ hai DB tách biệt nhưng đồng bộ sản phẩm. ShopSell là nơi người bán quản lý mặt hàng (source of truth cho catalog của shop); ShopEcommerce giữ bản sao để hiển thị storefront và luôn được cập nhật khi ShopSell thay đổi.
 
-Lý do: cả 3 app chạy trên `localhost` với port khác nhau. Nếu dùng cookie mặc định của NextAuth, cookie có thể đè lên nhau và làm sai session.
+Bước:
 
-## 5. Refresh token rotation và stale session
+1. Audit schema hiện tại: `shop-ecommerce/db/schema.ts` (đang chứa catalog + seed) và `shop-sell/db/schema.ts` (hiện chưa quản lý sản phẩm). Xác định trường sản phẩm chung (sku, name, price, stock, status, sellerId, images).
+2. Đưa quyền quản lý sản phẩm về ShopSell: thêm bảng `products` (và biến thể/tồn kho nếu cần) vào `seller_workspace`, UI CRUD trong ShopSell, guard theo `seller`/`ecommerce_admin`.
+3. Thiết kế đồng bộ một chiều ShopSell -> ShopEcommerce:
+   - ShopSell ký payload bằng HMAC-SHA256 với `CATALOG_SYNC_SECRET`.
+   - ShopEcommerce expose endpoint nội bộ `POST /api/internal/catalog/upsert` và `/delete`, verify chữ ký, ghi vào bảng catalog read-copy. Idempotent theo `(sellerId, sku)`.
+   - Gọi sync ngay khi seller tạo/sửa/xoá/ẩn sản phẩm (đồng bộ tức thời). Bổ sung outbox + retry để chịu lỗi mạng.
+4. ShopEcommerce chỉ đọc bản sao này để hiển thị; không cho sửa catalog trực tiếp.
+5. Backfill: script đồng bộ toàn bộ sản phẩm hiện có lần đầu.
 
-Keycloak access token ngắn hạn. NextAuth không tự refresh, nên mỗi app có `lib/refreshAccessToken.ts`.
+Deliverable: seller sửa sản phẩm trên :3100, storefront :3000 thấy thay đổi sau khi sync. Hai DB vẫn độc lập.
 
-Luôn xử lý 3 trường hợp:
+Kiểm thử: tạo/sửa/ẩn 1 sản phẩm ở ShopSell -> kiểm tra phản ánh ở ShopEcommerce; gửi payload sai chữ ký -> ShopEcommerce từ chối.
 
-- Access token còn hạn: giữ nguyên.
-- Gần hết hạn: gọi Keycloak token endpoint với `grant_type=refresh_token`.
-- Refresh fail do `invalid_grant`, `Session not active`, revoke session: đánh dấu `RefreshAccessTokenError`.
+Phụ thuộc: `CATALOG_SYNC_SECRET` (đã có trong `.env.example`), cập nhật `bootstrap.sh` để ghi secret này vào cả `shop-sell/.env` và `shop-ecommerce/.env`.
 
-Sau fix mới, app không refresh lặp vô hạn và không ném `console.error` trong server render gây Next dev overlay. Session callback coi token lỗi như logged-out, proxy cũng redirect về signin nếu gặp stale JWT.
+### Phase 2 — Xây ShopFood
 
-## 6. ShopPay MFA per-client
+Mục tiêu: ShopFood thành app chạy được, tham gia SSO/SLO, DB độc lập.
 
-ShopPay cần bảo mật cao hơn marketplace. Thay vì bắt TOTP toàn realm, repo bind authentication flow riêng cho client `shoppay-app`:
+Bước:
 
-- Flow `browser-shoppay`.
-- Không dựa vào `auth-cookie` silent login như client thường.
-- Username/password và OTP là required trong flow ShopPay.
-- `userSetupAllowed=true` để user chưa có TOTP được setup lần đầu.
+1. NextAuth: `app/api/auth/[...nextauth]/route.ts` với Keycloak provider, cookie riêng `shopfood.session-token`; `lib/auth.ts`, `lib/refreshAccessToken.ts` (copy pattern từ `shop-pay`).
+2. `lib/syncUserProfile.ts` + bảng `user_profile` trong `shopfood`.
+3. Role guard: `buyer` để đặt món, `food_admin` cho khu quản trị; `proxy.ts`/middleware redirect `/denied`.
+4. Single Logout: endpoint `/api/auth/frontchannel-logout` + `SingleLogoutWatcher`; đăng ký `frontchannel.logout.url` cho client `shopfood-app` (đã có trong realm).
+5. Nghiệp vụ: hoàn thiện `db/schema.ts` (menu, đơn món), trang menu, giỏ, đặt món; tùy chọn thanh toán qua ShopPay (tái dùng HMAC payment).
+6. Wiring: thêm `shop-food` vào `npm run dev`, `db:push`, và phần push schema trong `reset.sh`.
 
-Trade-off: đây là client-specific MFA enforcement, không phải step-up theo từng action. Production có thể nâng cấp sang ACR/AMR step-up: chỉ yêu cầu MFA khi topup lớn, pay, đổi PIN, rút tiền.
+Deliverable: login SSO vào :3300, đặt món, logout đồng bộ với các app khác.
 
-## 7. SAML brokering với `acme-corp-realm`
+Kiểm thử: smoke + role guard + SLO cho :3300.
 
-Để demo B2B identity brokering mà không cần Azure AD/Okta thật, repo dùng realm thứ hai `acme-corp-realm` làm mock company IdP.
+Phụ thuộc: Phase 0 (client + DB + route đã sẵn).
 
-Luồng đi như sau:
+### Phase 3 — Xây Admin Portal (DONE)
 
-1. User vào `seller-workspace`.
-2. Keycloak `ecommerce-realm` hiện nút "Sign in with Acme Corp".
-3. Browser sang `acme-corp-realm` qua SAML.
-4. Acme xác thực user và POST SAML Response về broker endpoint.
-5. `ecommerce-realm` tạo/link user và mapper role `seller`.
+Mục tiêu: cổng quản trị nhân sự nền tảng, thao tác qua Keycloak Admin API.
 
-Production cần bật signed assertions, cert rotation và metadata endpoint từ IdP thật.
+Đã làm: NextAuth + cookie `admin-portal.session-token` + `proxy.ts` guard role admin nền tảng; `lib/keycloakAdmin.ts` qua `backend-admin-client` (list/count user, gán/thu hồi role, list realm roles, bật/tắt user); màn `/ecommerce` (gian hàng, catalog, đơn hàng, yêu cầu seller), `/food` (nhà hàng, thực đơn, đơn món, yêu cầu food-seller), `/users` (lọc + gán/thu hồi + bật/tắt), `/kyc` (gán/thu hồi `kyc-verified`), `/audit`, dashboard `/`; phân quyền per-platform trong `lib/scope.ts` (KYC chỉ `admin`/`pay_admin`, bật/tắt user chỉ `admin`); frontchannel logout + watcher; DB riêng `admin_portal` cho audit/cache, đọc thêm DB `ecommerce` và `shopfood` để hiển thị vận hành. Duyệt KYC là gán/thu hồi role (review tài liệu vẫn ở ShopPay `/kyc/admin`). Còn lại: test end-to-end qua trình duyệt và chuyển danh tính admin sang AD (Phase 4).
 
-## 8. Cross-app payment với HMAC
+Bước:
 
-`web-app` redirect sang `shoppay` để thanh toán. Query string có thể bị user sửa, nên hai app ký payload bằng HMAC-SHA256 với `MERCHANT_HMAC_SECRET`.
+1. NextAuth + guard yêu cầu role `admin`/`*_admin`; cookie `admin-portal.session-token`.
+2. `lib/keycloakAdmin.ts` (copy từ `shop-pay`) dùng `backend-admin-client`: liệt kê user, gán/thu hồi role, reset, vô hiệu hoá.
+3. Màn hình: danh sách user + lọc theo role; gán/thu hồi role; hàng đợi duyệt KYC (gán `kyc-verified`); audit log.
+4. Phân quyền per-platform: `ecommerce_admin` -> ShopEcommerce + ShopSell, `food_admin` -> ShopFood, `pay_admin` -> ShopPay + KYC. `admin` thấy tất cả.
+5. Single Logout endpoint + watcher.
+6. Giai đoạn đầu test bằng `admin1` (Keycloak-local); sau Phase 4 chuyển sang danh tính AD.
 
-Pattern:
+Deliverable: admin đăng nhập :3400, quản lý user/role, duyệt KYC; mọi thao tác ghi audit.
 
-- Ecommerce tạo payment URL với `merchant`, `orderId`, `amount`, `returnUrl`, `nonce`, `sig`.
-- ShopPay verify signature khi render và verify lại trong server action.
-- ShopPay trừ ví idempotent theo external ref `merchant:orderId`.
-- Return URL về ecommerce cũng có signature riêng để update order.
+Kiểm thử: user thiếu role admin bị chặn; gán role phản ánh trên Keycloak; duyệt KYC gán `kyc-verified`.
 
-Trade-off: HMAC là symmetric secret; nếu một bên leak secret thì bên đó có thể forge. Production PSP thường dùng asymmetric signature.
+Phụ thuộc: `backend-admin-client` (đã có).
 
-## 9. KYC và giao dịch giá trị cao
+### Phase 4 — AD/LDAP federation cho nhân sự nền tảng (chạy LOCAL)
 
-Business rule: giao dịch ShopPay trên 5.000.000 VND cần KYC.
+Mục tiêu: danh tính admin đến từ Windows Server AD; xoá khỏi AD là mất quyền. Giai đoạn này chạy **trên máy local** (DC trong VMware), **chưa cần VPS/Tailscale**.
 
-Action topup check `session.user.roles.includes("kyc-verified")`. Đây là cách cố ý để chứng minh role claim trong token là snapshot tại thời điểm login.
+**Runbook chi tiết: [docs/active-directory.md](docs/active-directory.md)** (mạng VMware Bridged, OU/group/user, service account, User Federation, group→role mapper, test, deprovisioning, troubleshooting).
 
-Quyết định hiện tại:
+Tóm tắt bước:
 
-- `approveKyc` cập nhật DB và luôn gọi Keycloak Admin API gán role, kể cả khi document đã `approved`.
-- `topup` > 5 triệu chỉ cho qua khi token hiện tại đã có role `kyc-verified`.
-- Sau khi admin duyệt KYC, user cần logout/login lại để nhận token mới có role vừa được gán.
+1. Dựng Windows Server AD DS trong VMware (domain `ecommerce.local`); card mạng **Bridged** + IP tĩnh; tạo OU `Admins`, `Groups`, `ServiceAccounts`.
+2. Service account `keycloak-svc` (quyền đọc) cho Keycloak bind; group ứng role: `Platform-Admins`→`admin`, `Ecommerce-Admins`→`ecommerce_admin`, `Food-Admins`→`food_admin`, `Pay-Admins`→`pay_admin`.
+3. Kết nối **LAN local**: Keycloak (Docker/WSL2) gọi `ldap://<IP-LAN-cua-DC>:389`. Điền tham chiếu `LDAP_*` trong `.env` (config thật nhập trong Keycloak Console). (Tailscale chỉ cần khi lên VPS — Phase 5.)
+4. Keycloak realm `ecommerce-realm` -> User Federation -> add LDAP (vendor: Active Directory); test connection/auth; sync users.
+5. `group-ldap-mapper` import group AD -> Keycloak group, rồi gán realm role cho từng group (Groups > Role mapping).
+6. Deprovisioning: access token lifespan ngắn (5 phút); xoá user khỏi AD => refresh thất bại => mất quyền.
+7. MFA cho nhân sự nền tảng: bật OTP/required action cho nhóm admin.
+8. (Tùy chọn) đưa cấu hình federation vào realm JSON với placeholder `${LDAP_*}` + thêm vào `entrypoint.sh` `VARS_TO_RESOLVE` để tái lập tự động.
 
-## 10. Frontchannel logout và giới hạn của browser
+Deliverable: đăng nhập Admin Portal bằng tài khoản AD; xoá tài khoản trên AD thì mất quyền sau khi token hết hạn.
 
-Keycloak frontchannel logout gọi iframe ẩn tới mỗi client:
+Kiểm thử: login admin AD thành công và nhận đúng role theo group; xoá/đổi group trên AD và quan sát quyền thay đổi.
 
-- `http://localhost:3000/api/auth/frontchannel-logout`
-- `http://localhost:3100/api/auth/frontchannel-logout`
-- `http://localhost:3200/api/auth/frontchannel-logout`
+Phụ thuộc: Phase 3 (Admin Portal), hạ tầng AD local (VMware).
 
-Endpoint xoá cookie NextAuth và các cookie transient (`csrf`, `callback`, `pkce`, `state`, `nonce`). Để tránh browser chặn Set-Cookie trong iframe làm tab active vẫn còn session, endpoint còn ghi marker `localStorage`. Client component `SingleLogoutWatcher` lắng nghe marker và gọi `signOut({ redirect: false })`, sau đó reload tab.
+### Phase 5 — Triển khai VPS + Tailscale + Nginx + HTTPS
 
-Trade-off: frontchannel vẫn phụ thuộc browser. Production nên có backchannel logout: verify `logout_token`, lưu revoked `sid` trong DB, và check trong session/proxy.
+Bước:
 
-## 11. User profile cache
+1. Provision VPS DigitalOcean; cài Docker + Compose; cài Tailscale, join cùng tailnet với máy AD.
+2. Cấu hình domain + TLS (Let's Encrypt) ở Nginx; chuyển cookie sang `secure: true`, sửa redirect URI/issuer sang domain thật trong realm + `.env` từng app.
+3. `docker compose up -d` cho hạ tầng; chạy app (PM2/systemd hoặc container hoá Next.js).
+4. Mở Nginx route cho cả 5 app; siết security headers.
+5. Verify SSO/SLO/KYC/HMAC trên môi trường VPS.
 
-Mỗi app có bảng `user_profile` để cache sub, email, name, roles, groups khi login. Mục tiêu là giảm gọi Keycloak Admin API trên mỗi request và có đủ thông tin cho audit/business logic.
+Deliverable: hệ thống chạy trên VPS, Keycloak federate AD qua Tailscale.
 
-Trade-off: data có thể stale nếu admin sửa user ngoài luồng login. Nếu cần consistency mạnh, nên viết Keycloak Event Listener SPI hoặc webhook để sync UserUpdated/UserDeleted.
+Phụ thuộc: Phase 1-4.
 
-## 12. Hướng production
+### Phase 6 — Kerberos/SPNEGO desktop SSO (sau)
 
-Những thay đổi nên làm nếu đưa ra môi trường thật:
+Mục tiêu: từ máy domain-joined trong mạng nội bộ, truy cập web được Keycloak tự nhận diện không cần nhập lại.
 
-- HTTPS và cookie `secure: true`.
-- Backchannel logout thay cho frontchannel-only.
+Bước:
+
+1. Tạo SPN + keytab cho Keycloak trên AD; cấu hình Kerberos integration trong LDAP federation provider.
+2. Bật authenticator Kerberos trong browser flow; cấu hình browser (Negotiate) trên máy nội bộ.
+3. Xử lý reverse DNS/SPN khi đi qua Tailscale tới VPS.
+
+Phụ thuộc: Phase 4. Đánh dấu rủi ro cao về cấu hình mạng.
+
+## Quyết định thiết kế & trade-off (tham chiếu)
+
+- **Cookie riêng từng app**: tránh đè session khi nhiều app cùng `localhost`. Trên VPS dùng subdomain/path riêng.
+- **Refresh token rotation**: mỗi app có `lib/refreshAccessToken.ts`; refresh fail (`invalid_grant`, `Session not active`) coi như logged-out, không lặp vô hạn. Đây cũng là nền cho deprovisioning AD.
+- **ShopPay MFA per-client**: TOTP bind vào flow `browser-shoppay` thay vì toàn realm. Production nâng cấp step-up theo ACR/AMR.
+- **Cross-app HMAC**: ShopEcommerce <-> ShopPay (`MERCHANT_HMAC_SECRET`) và ShopSell -> ShopEcommerce catalog (`CATALOG_SYNC_SECRET`). Symmetric, đủ cho demo; production cân nhắc chữ ký bất đối xứng.
+- **KYC snapshot trong token**: topup > 5tr check role `kyc-verified` trong token hiện tại; sau approve cần login lại để nhận token mới. Cố ý để minh hoạ token là snapshot.
+- **Frontchannel logout + watcher**: iframe ẩn + marker `localStorage`. Production nên thêm backchannel logout.
+- **User profile cache**: bảng `user_profile` mỗi app, giảm gọi Admin API; trade-off có thể stale, cần event/webhook nếu cần consistency mạnh.
+
+## Hướng production (ngoài scope các phase hiện tại)
+
+- Backchannel logout chuẩn OIDC.
 - Secrets manager thay `.env`.
 - Drizzle migration versioned thay `db:push`.
 - Nonce replay table cho payment URL.
-- Step-up auth bằng ACR/AMR cho ShopPay.
-- Integration test cho SSO, SLO, KYC, HMAC payment.
+- Observability: log Keycloak, audit dashboard, metrics.
