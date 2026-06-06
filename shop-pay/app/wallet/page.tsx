@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { transactions, kycDocuments } from "@/db/schema";
 import { getOrCreateWallet, formatVND } from "@/lib/wallet";

@@ -1,3 +1,20 @@
+x-next-app: &next-app
+  image: node:24-bookworm-slim
+  user: "1000:1000"
+  # Turbopack currently panics in Docker bind-mount dev mode for this lab;
+  # webpack keeps the client bundle stable for Windows/VM browser testing.
+  command: ["sh", "-lc", "npm run dev -- --webpack"]
+  environment:
+    NEXT_TELEMETRY_DISABLED: "1"
+    WATCHPACK_POLLING: "true"
+    KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+    NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    - postgres-app
+    - keycloak
+
 services:
   # === Postgres dành riêng cho Keycloak (nội bộ, không expose) ===
   postgres-keycloak:
@@ -44,31 +61,140 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       GOOGLE_IDP_CLIENT_ID: ${GOOGLE_IDP_CLIENT_ID}
       GOOGLE_IDP_CLIENT_SECRET: ${GOOGLE_IDP_CLIENT_SECRET}
+      # Kerberos/SPNEGO desktop SSO (Phase 6). krb5.conf is safe to commit;
+      # keytab files are local secrets and ignored by git.
+      JAVA_OPTS_APPEND: ${JAVA_OPTS_APPEND:--Djava.security.krb5.conf=/opt/keycloak/conf/krb5.conf}
     ports:
       - "8080:8080"
     volumes:
       # Keycloak directory-import yêu cầu tên file = {realm-name}-realm.json
       - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/ecommerce-realm-realm.json:ro
       - ./keycloak/entrypoint.sh:/custom-entrypoint.sh:ro
+      - ./keycloak/krb5.conf:/opt/keycloak/conf/krb5.conf:ro
+      - ./keycloak/keytabs:/opt/keycloak/conf/keytabs:ro
     depends_on:
       - postgres-keycloak
+    networks:
+      default:
+        aliases:
+          - app.ecommerce.local
 
   # === Domain Controller (Active Directory) — KHÔNG chạy trong compose ===
-  # DC là Windows Server (AD DS) chạy ở máy local (VMware), kết nối tới VPS qua
-  # Tailscale. Keycloak federate vào AD qua LDAP để cấp danh tính cho nhân sự
-  # nền tảng (admin). Cấu hình LDAP_* trong .env và User Federation trong
-  # Keycloak — xem PLAN.md mục Identity.
+  # Local lab: DC là Windows Server (AD DS) chạy trong VMware, Keycloak federate
+  # LDAP qua IP LAN của DC. VPS/Tailscale là phase triển khai sau.
+
+  # === Next.js apps chạy trong Docker cho lab Windows/VMware ===
+  # Trước đó 5 app chạy trực tiếp bằng `npm run dev` trong WSL. Windows host chỉ
+  # truy cập được port Docker (:8080) nhưng timeout các Next dev process trong WSL,
+  # nên local lab chạy app qua Docker để port publishing ổn định như Keycloak.
+  shop-ecommerce-app:
+    <<: *next-app
+    working_dir: /app
+    env_file:
+      - ./shop-ecommerce/.env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/ecommerce
+      KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXTAUTH_URL: http://app.ecommerce.local:3000
+      SHOPPAY_BASE_URL: http://app.ecommerce.local:3200
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./shop-ecommerce:/app
+
+  shop-sell-app:
+    <<: *next-app
+    working_dir: /app
+    env_file:
+      - ./shop-sell/.env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/seller_workspace
+      KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXTAUTH_URL: http://app.ecommerce.local:3100
+      SHOP_ECOMMERCE_INTERNAL_URL: http://shop-ecommerce-app:3000
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./shop-sell:/app
+    depends_on:
+      - postgres-app
+      - keycloak
+      - shop-ecommerce-app
+
+  shop-pay-app:
+    <<: *next-app
+    working_dir: /app
+    env_file:
+      - ./shop-pay/.env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/shoppay
+      KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXTAUTH_URL: http://app.ecommerce.local:3200
+      SHOP_ECOMMERCE_PUBLIC_URL: http://app.ecommerce.local:3000
+      SHOP_SELL_PUBLIC_URL: http://app.ecommerce.local:3100
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./shop-pay:/app
+
+  shop-food-app:
+    <<: *next-app
+    working_dir: /app
+    env_file:
+      - ./shop-food/.env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/shopfood
+      KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXTAUTH_URL: http://app.ecommerce.local:3300
+    ports:
+      - "3300:3300"
+    volumes:
+      - ./shop-food:/app
+
+  admin-portal-app:
+    <<: *next-app
+    working_dir: /app
+    env_file:
+      - ./admin-portal/.env
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/admin_portal
+      ECOMMERCE_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/ecommerce
+      SHOPPAY_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/shoppay
+      SHOPFOOD_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-app:5432/shopfood
+      KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXT_PUBLIC_KEYCLOAK_ISSUER: http://app.ecommerce.local:8080/realms/ecommerce-realm
+      NEXTAUTH_URL: http://app.ecommerce.local:3400
+    ports:
+      - "3400:3400"
+    volumes:
+      - ./admin-portal:/app
 
   nginx:
     image: nginx:1.27
     ports:
-      - "8000:80"
+      - "8000:8000"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - keycloak
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - shop-ecommerce-app
+      - shop-sell-app
+      - shop-food-app
+      - admin-portal-app
 
 volumes:
   postgres_keycloak_data:

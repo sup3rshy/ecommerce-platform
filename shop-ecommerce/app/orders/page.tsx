@@ -4,16 +4,17 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import crypto from "node:crypto";
 
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "../../db";
 import { orders, products } from "../../db/schema";
 import { sign } from "../../lib/sig";
 
 const SHOPPAY_BASE = process.env.SHOPPAY_BASE_URL ?? "http://localhost:3200";
+const SHOP_ECOMMERCE_BASE = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 
 function buildPayUrl(orderId: number, amount: number): string {
   const nonce = crypto.randomBytes(8).toString("hex");
-  const returnUrl = "http://localhost:3000/payment/return";
+  const returnUrl = new URL("/payment/return", SHOP_ECOMMERCE_BASE).toString();
   const fields = {
     merchant: "ecommerce",
     orderId: String(orderId),

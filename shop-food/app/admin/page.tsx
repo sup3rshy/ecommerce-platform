@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { desc, eq, inArray } from "drizzle-orm";
 
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { menuItems, orders, orderItems } from "@/db/schema";
 import { logAudit } from "@/lib/audit";

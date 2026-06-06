@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { currentStore } from "@/lib/store";
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {

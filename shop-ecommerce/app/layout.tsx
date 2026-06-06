@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 import { getServerSession } from "next-auth";
 import type { Session } from "next-auth";
 
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import SidebarNav from "./components/SidebarNav";
 
 const notoSans = Noto_Sans({

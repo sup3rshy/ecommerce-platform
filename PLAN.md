@@ -6,7 +6,8 @@ Tài liệu này là kế hoạch xây dựng theo từng phase. Mô tả dự �
 
 - Làm từ từ, từng phase, mỗi phase có deliverable và cách kiểm thử rõ ràng.
 - Không phá vỡ 3 app đang chạy khi thêm tính năng mới.
-- Phần phụ thuộc hạ tầng ngoài (Windows AD, Tailscale, VPS) tách thành phase riêng, làm sau khi phần app đã chắc.
+- Phần phụ thuộc hạ tầng ngoài tách thành phase riêng. Windows AD local đã được cấu hình
+  trước VPS/Tailscale để kiểm chứng danh tính nền tảng.
 - Định danh nội bộ (OIDC client ID, tên DB, cookie) giữ ổn định; chỉ tên thư mục theo tên sản phẩm.
 
 ## Kiến trúc mục tiêu
@@ -38,7 +39,9 @@ Quy tắc:
 
 - DC chỉ là nguồn định danh. Phân quyền thực thi ở Keycloak (role) và ở từng app (guard).
 - Xoá user khỏi AD => mất quyền toàn hệ sinh thái. Cơ chế: access token TTL ngắn (vd 5 phút) + refresh kiểm tra lại với Keycloak; user bị xoá khỏi AD sẽ không federate được nên refresh thất bại => app coi như logged-out.
-- Lộ trình đăng nhập: Phase 4 dùng LDAP (nhập tài khoản AD trên trang login Keycloak). Phase 6 thêm Kerberos/SPNEGO để tự nhận diện từ máy domain-joined.
+- Lộ trình đăng nhập: Phase 4 dùng LDAP (nhập tài khoản AD trên trang login Keycloak).
+  Phase 6 dùng Kerberos/SPNEGO với hostname LAN `app.ecommerce.local` để tự nhận diện
+  từ máy Win10 domain-joined.
 
 ## Lộ trình theo phase
 
@@ -94,7 +97,7 @@ Phụ thuộc: Phase 0 (client + DB + route đã sẵn).
 
 Mục tiêu: cổng quản trị nhân sự nền tảng, thao tác qua Keycloak Admin API.
 
-Đã làm: NextAuth + cookie `admin-portal.session-token` + `proxy.ts` guard role admin nền tảng; `lib/keycloakAdmin.ts` qua `backend-admin-client` (list/count user, gán/thu hồi role, list realm roles, bật/tắt user); màn `/ecommerce` (gian hàng, catalog, đơn hàng, yêu cầu seller), `/food` (nhà hàng, thực đơn, đơn món, yêu cầu food-seller), `/users` (lọc + gán/thu hồi + bật/tắt), `/kyc` (gán/thu hồi `kyc-verified`), `/audit`, dashboard `/`; phân quyền per-platform trong `lib/scope.ts` (KYC chỉ `admin`/`pay_admin`, bật/tắt user chỉ `admin`); frontchannel logout + watcher; DB riêng `admin_portal` cho audit/cache, đọc thêm DB `ecommerce` và `shopfood` để hiển thị vận hành. Duyệt KYC là gán/thu hồi role (review tài liệu vẫn ở ShopPay `/kyc/admin`). Còn lại: test end-to-end qua trình duyệt và chuyển danh tính admin sang AD (Phase 4).
+Đã làm: NextAuth + cookie `admin-portal.session-token` + `proxy.ts` guard role admin nền tảng; `lib/keycloakAdmin.ts` qua `backend-admin-client` (list/count user, gán/thu hồi role, list realm roles, bật/tắt user); màn `/ecommerce` (gian hàng, catalog, đơn hàng, yêu cầu seller), `/food` (nhà hàng, thực đơn, đơn món, yêu cầu food-seller), `/users` (lọc + gán/thu hồi + bật/tắt), `/kyc` (đọc `shoppay.kyc_documents`, approve cập nhật DB ShopPay + gán `kyc-verified`, reject cập nhật trạng thái), `/audit`, dashboard `/`; phân quyền per-platform trong `lib/scope.ts` (KYC chỉ `admin`/`pay_admin`, bật/tắt user chỉ `admin`); frontchannel logout + watcher; DB riêng `admin_portal` cho audit/cache, đọc thêm DB `ecommerce`, `shopfood`, `shoppay` để hiển thị vận hành/KYC. Còn lại: test end-to-end qua trình duyệt và chuyển danh tính admin sang AD (Phase 4).
 
 Bước:
 
@@ -111,7 +114,7 @@ Kiểm thử: user thiếu role admin bị chặn; gán role phản ánh trên K
 
 Phụ thuộc: `backend-admin-client` (đã có).
 
-### Phase 4 — AD/LDAP federation cho nhân sự nền tảng (chạy LOCAL)
+### Phase 4 — AD/LDAP federation cho nhân sự nền tảng (chạy LOCAL, DONE phần cốt lõi)
 
 Mục tiêu: danh tính admin đến từ Windows Server AD; xoá khỏi AD là mất quyền. Giai đoạn này chạy **trên máy local** (DC trong VMware), **chưa cần VPS/Tailscale**.
 
@@ -128,7 +131,8 @@ Tóm tắt bước:
 7. MFA cho nhân sự nền tảng: bật OTP/required action cho nhóm admin.
 8. (Tùy chọn) đưa cấu hình federation vào realm JSON với placeholder `${LDAP_*}` + thêm vào `entrypoint.sh` `VARS_TO_RESOLVE` để tái lập tự động.
 
-Deliverable: đăng nhập Admin Portal bằng tài khoản AD; xoá tài khoản trên AD thì mất quyền sau khi token hết hạn.
+Deliverable hiện đã đạt: đăng nhập Admin Portal bằng tài khoản AD (`ad-admin`) và nhận role
+qua group AD. Còn cần kiểm thử deprovisioning/MFA end-to-end.
 
 Kiểm thử: login admin AD thành công và nhận đúng role theo group; xoá/đổi group trên AD và quan sát quyền thay đổi.
 
@@ -148,17 +152,22 @@ Deliverable: hệ thống chạy trên VPS, Keycloak federate AD qua Tailscale.
 
 Phụ thuộc: Phase 1-4.
 
-### Phase 6 — Kerberos/SPNEGO desktop SSO (sau)
+### Phase 6 — Kerberos/SPNEGO desktop SSO (LOCAL IN PROGRESS)
 
 Mục tiêu: từ máy domain-joined trong mạng nội bộ, truy cập web được Keycloak tự nhận diện không cần nhập lại.
 
 Bước:
 
-1. Tạo SPN + keytab cho Keycloak trên AD; cấu hình Kerberos integration trong LDAP federation provider.
-2. Bật authenticator Kerberos trong browser flow; cấu hình browser (Negotiate) trên máy nội bộ.
-3. Xử lý reverse DNS/SPN khi đi qua Tailscale tới VPS.
+1. Dùng hostname LAN `app.ecommerce.local` thay `localhost`; DNS trên DC trỏ về IP máy thật.
+2. Tạo SPN + keytab `HTTP/app.ecommerce.local@ECOMMERCE.LOCAL` cho Keycloak; mount keytab vào `keycloak/keytabs/`.
+3. Cấu hình Kerberos integration trong LDAP federation provider.
+4. Bật authenticator Kerberos trong browser flow và flow riêng `shoppay-alternatives`.
+5. Chuyển `.env` app + redirect URI Keycloak sang `app.ecommerce.local` bằng script.
+6. Mở port từ Win10 VM vào WSL bằng portproxy trỏ tới IP WSL, không trỏ vòng về `127.0.0.1`.
+7. Cấu hình browser Win10 gửi Negotiate cho `app.ecommerce.local`.
 
-Phụ thuộc: Phase 4. Đánh dấu rủi ro cao về cấu hình mạng.
+Runbook: [docs/desktop-sso-kerberos.md](docs/desktop-sso-kerberos.md). Phụ thuộc: Phase 4.
+Rủi ro còn lại nằm ở DNS/portproxy/browser policy trên máy Windows host và Win10 VM.
 
 ## Quyết định thiết kế & trade-off (tham chiếu)
 

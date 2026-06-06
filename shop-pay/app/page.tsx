@@ -1,21 +1,23 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
   const isAuthenticated = Boolean(session?.user?.id);
+  const ecommerceUrl = process.env.SHOP_ECOMMERCE_PUBLIC_URL ?? "http://localhost:3000";
+  const sellerUrl = process.env.SHOP_SELL_PUBLIC_URL ?? "http://localhost:3100";
 
   return (
     <div>
       <h1>⚡ ShopPay</h1>
       <p className="muted">
         Ví điện tử cho hệ sinh thái ecommerce. Cùng tài khoản SSO với{" "}
-        <a href="http://localhost:3000" style={{ color: "#ea580c" }}>
+        <a href={ecommerceUrl} style={{ color: "#ea580c" }}>
           ecommerce
         </a>{" "}
         và{" "}
-        <a href="http://localhost:3100" style={{ color: "#ea580c" }}>
+        <a href={sellerUrl} style={{ color: "#ea580c" }}>
           seller-workspace
         </a>
         .

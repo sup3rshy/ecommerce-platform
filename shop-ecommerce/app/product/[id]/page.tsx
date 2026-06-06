@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 
 import { db } from "../../../db";
 import { products, stores } from "../../../db/schema";
-import { authOptions } from "../../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import ProductPurchasePanel from "../../components/ProductPurchasePanel";
 
 type ProductDetailPageProps = {

@@ -4,7 +4,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB

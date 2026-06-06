@@ -3,7 +3,7 @@ import { Geist_Mono, Noto_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { getServerSession } from "next-auth";
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { TopBar } from "./components/TopBar";
 
 const notoSans = Noto_Sans({

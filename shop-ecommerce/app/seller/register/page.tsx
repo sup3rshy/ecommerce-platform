@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
-import { authOptions } from "../../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import SellerRegistrationForm from "../../components/SellerRegistrationForm";
 import { db } from "../../../db";
 import { sellerUpgradeRequests } from "../../../db/schema";

@@ -132,3 +132,5 @@ docker compose cp keycloak:/tmp/kc-export/ecommerce-realm-realm.json ./keycloak/
   `entrypoint.sh` `VARS_TO_RESOLVE`.
 - **`invalid_client` ở app**: `KEYCLOAK_CLIENT_SECRET` trong app `.env` không khớp secret realm
   → `bash scripts/bootstrap.sh && bash scripts/reset.sh`.
+- **Win10 domain-joined không tự login**: Desktop SSO phải dùng hostname LAN
+  `app.ecommerce.local`, không dùng `localhost`; xem [desktop-sso-kerberos.md](desktop-sso-kerberos.md).

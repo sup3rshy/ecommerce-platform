@@ -56,7 +56,8 @@ fi
 # tiếp vào ShopEcommerce nữa — storefront trống cho tới khi seller thêm sản phẩm.
 echo
 echo "✓ Done. Tiếp theo:"
-echo "    npm run dev"
+echo "    npm run dev          # chạy trực tiếp trong WSL"
+echo "    npm run dev:docker   # khuyến nghị khi truy cập từ Windows host / Win10 VM"
 echo
 echo "  Để có catalog mẫu (chọn 1):"
 echo "    A. Login seller1 ở http://localhost:3100 -> vào /products -> thêm sản phẩm (tự đồng bộ sang :3000)."

@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { desc, eq } from "drizzle-orm";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { staffInvitations, storePermissions } from "@/db/schema";
 import { logAudit } from "@/lib/audit";

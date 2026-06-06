@@ -48,9 +48,10 @@ Bám theo các phase trong [PLAN.md](PLAN.md). `[x]` đã xong, `[ ]` chưa làm
 - [x] Màn hình tập trung: `/ecommerce` (gian hàng/catalog/đơn/yêu cầu seller), `/food` (nhà hàng/menu/đơn/yêu cầu food-seller), `/users` (danh sách + lọc theo role + gán/thu hồi + bật/tắt), `/kyc`, `/audit`, dashboard `/`.
 - [x] Phân quyền per-platform (`lib/scope.ts`): `ecommerce_admin` quản lý buyer/seller/staff + shop binding; `food_admin` quản lý buyer/food-seller; `pay_admin` quản lý wallet/KYC; `admin` toàn quyền. KYC chỉ `admin`/`pay_admin`. Bật/tắt user chỉ `admin`.
 - [x] Frontchannel logout endpoint + `SingleLogoutWatcher`.
-- [x] DB riêng `admin_portal` (bảng `audit_logs` + cache `user_profile`); wire vào `init-app-dbs.sql`, `bootstrap.sh`, `db:push`, `reset.sh`, `warmup.sh`.
+- [x] DB riêng `admin_portal` (bảng `audit_logs` + cache `user_profile`); đọc thêm `ecommerce`/`shopfood`/`shoppay`; wire vào `init-app-dbs.sql`, `bootstrap.sh`, `db:push`, `reset.sh`, `warmup.sh`.
 - [x] Thêm `admin-portal` vào `npm run dev` (+ `dev:webpack`).
 - [x] Smoke: app boot (:3400), guard 307->signin, providers OK, Admin API qua `backend-admin-client`, `tsc --noEmit` sạch.
+- [x] `/kyc` đọc pending từ `shoppay.kyc_documents`; approve qua Admin Portal cập nhật DB ShopPay + gán `kyc-verified` + ghi audit (đã smoke bằng session tạm và cleanup dữ liệu test).
 - [x] Đồng nhất role admin Ecommerce: gỡ `sell_admin`, dùng `ecommerce_admin` cho ShopEcommerce + ShopSell; migrate live realm không reset.
 - [x] Thêm user demo `buyer2` và `buyer3` (role `buyer`) vào realm JSON + live Keycloak.
 - [ ] Test end-to-end qua trình duyệt: login `admin1`, gán/thu hồi role + duyệt KYC (ghi audit), SLO đa tab. (Cần login Keycloak thật — chưa chạy trong môi trường agent, giống Phase 2.)
@@ -58,16 +59,17 @@ Bám theo các phase trong [PLAN.md](PLAN.md). `[x]` đã xong, `[ ]` chưa làm
 
 ## Phase 4 — AD/LDAP federation (nhân sự nền tảng)
 
-- [ ] Dựng Windows Server AD DS (VMware); tạo OU `Staff`, `Groups`, `ServiceAccounts`.
-- [ ] Service account `keycloak-svc` (read-only) cho Keycloak bind.
-- [ ] Group AD theo role: `kc-admin`, `kc-ecommerce-admin`, `kc-food-admin`, `kc-pay-admin`.
+- [x] Dựng Windows Server AD DS (VMware); domain `ecommerce.local`, DC `DC01`, Win10 join domain thành công.
+- [x] Service account `keycloak-svc` (read-only) cho Keycloak bind.
+- [x] Group AD theo role: `Platform-Admins`, `Ecommerce-Admins`, `Food-Admins`, `Pay-Admins`.
 - [ ] Cài Tailscale trên máy AD + VPS; điền `LDAP_*` trong `.env` bằng Tailscale IP của DC.
-- [ ] Keycloak `ecommerce-realm` -> User Federation -> LDAP (Active Directory): connection/bind/users DN, bật import + sync.
-- [ ] Group-to-role mapper: group AD -> realm role (`kc-admin`->`admin`, `kc-*-admin`->`*_admin`).
+- [x] Keycloak `ecommerce-realm` -> User Federation -> LDAP (Active Directory): connection/bind/users DN, bật import + sync.
+- [x] Group-to-role mapper: group AD -> realm role (`Platform-Admins`->`admin`, `*-Admins`->`*_admin`).
 - [ ] Deprovisioning: access token lifespan ngắn (~5 phút); verify xoá user AD => mất quyền sau khi token hết hạn.
 - [ ] MFA bắt buộc cho nhóm admin.
 - [ ] (Tùy chọn) đưa cấu hình federation vào realm JSON với placeholder `${LDAP_*}` + thêm vào `entrypoint.sh`.
-- [ ] Kiểm thử: login admin AD nhận đúng role; đổi/xoá group trên AD đổi quyền.
+- [x] Kiểm thử: login `ad-admin` vào Admin Portal thành công và nhận quyền `admin`.
+- [ ] Kiểm thử đổi/xoá group trên AD đổi quyền sau refresh token.
 
 ## Phase 5 — Triển khai VPS + Tailscale + Nginx + HTTPS
 
@@ -79,8 +81,14 @@ Bám theo các phase trong [PLAN.md](PLAN.md). `[x]` đã xong, `[ ]` chưa làm
 
 ## Phase 6 — Kerberos/SPNEGO desktop SSO (sau)
 
-- [ ] SPN + keytab cho Keycloak trên AD; cấu hình Kerberos trong LDAP federation.
-- [ ] Bật authenticator Kerberos trong browser flow; cấu hình browser Negotiate máy nội bộ.
+- [x] Chọn hostname LAN `app.ecommerce.local`; cập nhật realm/client redirect URI + `.env` app bằng script.
+- [x] SPN + keytab cho Keycloak trên AD; keytab đã lưu local ở `keycloak/keytabs/` (git ignored) và mount path chuẩn `/opt/keycloak/conf/keytabs/keycloak_app.keytab`.
+- [x] Bật authenticator Kerberos trong browser flow và `shoppay-alternatives` (live realm + realm JSON).
+- [x] Thêm `scripts/windows-host-portproxy.ps1` để mở port từ Win10 VM vào WSL bằng WSL IP.
+- [x] Thêm chế độ `npm run dev:docker`: 5 app Next chạy trong Docker Compose và publish `3000..3400`, Nginx bridge publish `8000`, khắc phục lỗi Windows host chỉ vào được Docker-published port `8080`.
+- [ ] Trên Windows host: chạy portproxy script sau mỗi lần WSL đổi IP.
+- [ ] Trên Win10: cấu hình browser Negotiate/Local intranet cho `http://app.ecommerce.local`.
+- [ ] Test end-to-end: login Win10 bằng `ECOMMERCE\\ad-admin`, mở `http://app.ecommerce.local:3400`, vào Admin Portal không hiện form login.
 - [ ] Xử lý reverse DNS/SPN khi đi qua Tailscale tới VPS.
 
 ## Trạng thái 3 app đã có (nền tảng để mở rộng)
@@ -99,12 +107,14 @@ Bám theo các phase trong [PLAN.md](PLAN.md). `[x]` đã xong, `[ ]` chưa làm
 - [ ] Test end-to-end qua trình duyệt: buyer xin food-seller + admin duyệt; admin gán/đổi shop; staff2 thấy roster shop 2; toàn bộ quyền hiển thị đúng.
 - [ ] Cleanup TypeScript còn lỗi sẵn ở vài file ngoài phạm vi SSO/KYC.
 
-## Phase 4 — AD/LDAP (local VMware, chuẩn bị sẵn)
+## Phase 4/6 — AD/LDAP + Desktop SSO local VMware
 
-- [ ] Dựng Windows Server AD trong VMware (domain `ecommerce.local`, Bridged + IP tĩnh). Theo `docs/active-directory.md`.
-- [ ] Service account `keycloak-svc` + OU `Admins`/`Groups`/`ServiceAccounts` + group `*-Admins`.
-- [ ] Keycloak User Federation (LDAP) -> sync user AD; `group-ldap-mapper` -> gán realm role admin/*_admin.
-- [ ] Test login app bằng tài khoản AD; xác nhận deprovisioning (xoá AD -> mất quyền sau khi token hết hạn).
+- [x] Dựng Windows Server AD trong VMware (domain `ecommerce.local`, Bridged + IP tĩnh). Theo `docs/active-directory.md`.
+- [x] Service account `keycloak-svc` + OU `Admins`/`Groups`/`ServiceAccounts` + group `*-Admins`.
+- [x] Keycloak User Federation (LDAP) -> sync user AD; `group-ldap-mapper` -> gán realm role admin/*_admin.
+- [x] Test login app bằng tài khoản AD (`ad-admin`) thành công.
+- [ ] Test Desktop SSO theo `docs/desktop-sso-kerberos.md`.
+- [ ] Xác nhận deprovisioning (xoá AD -> mất quyền sau khi token hết hạn).
 
 ## Việc nền (xuyên suốt)
 

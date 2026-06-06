@@ -60,7 +60,7 @@ export default async function AdminStoresPage() {
                     action={async () => {
                       "use server";
                       const { getServerSession: gss } = await import("next-auth");
-                      const { authOptions: ao } = await import("../../api/auth/[...nextauth]/route");
+                      const { authOptions: ao } = await import("@/lib/authOptions");
                       const s = await gss(ao);
                       if (!s?.user?.id || !s.user.roles?.includes("admin")) return;
 
@@ -116,7 +116,7 @@ export default async function AdminStoresPage() {
                           action={async () => {
                             "use server";
                             const { getServerSession: gss } = await import("next-auth");
-                            const { authOptions: ao } = await import("../../api/auth/[...nextauth]/route");
+                            const { authOptions: ao } = await import("@/lib/authOptions");
                             const s = await gss(ao);
                             if (!s?.user?.id || !s.user.roles?.includes("admin")) return;
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "../lib/authOptions";
 import { getKeycloakUserCount } from "../lib/keycloakAdmin";
 import {
   canManageEcommerce,

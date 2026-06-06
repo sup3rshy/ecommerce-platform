@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { orders, orderItems } from "@/db/schema";
 import { logAudit } from "@/lib/audit";

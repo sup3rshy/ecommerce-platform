@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "../../lib/authOptions";
 import { getKeycloakUsersWithRoles } from "../../lib/keycloakAdmin";
 import { getEcommerceOverview, type UpgradeRequest } from "../../lib/platformData";
 import { canManageEcommerce } from "../../lib/scope";

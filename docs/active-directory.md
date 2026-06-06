@@ -21,7 +21,7 @@ Domain ví dụ dùng xuyên suốt: **`ecommerce.local`** (NetBIOS `ECOMMERCE`)
 ```
 ┌─ Máy thật (Windows) ───────────────────────────────────────────────┐
 │                                                                     │
-│   VMware ── Windows Server 2022 (DC: dc01.ecommerce.local)          │
+│   VMware ── Windows Server 2016/2019/2022 (DC: dc01.ecommerce.local)│
 │              card mạng = Bridged  ->  IP LAN, vd 192.168.1.50       │
 │                                                                     │
 │   WSL2 ── Docker ── Keycloak (:8080)  ──LDAP──> 192.168.1.50:389    │
@@ -40,7 +40,7 @@ Domain ví dụ dùng xuyên suốt: **`ecommerce.local`** (NetBIOS `ECOMMERCE`)
 
 ## 1. Dựng Domain Controller trong VMware
 
-1. Tạo VM Windows Server 2022 (hoặc 2019), 2 vCPU / 4GB RAM là đủ cho lab.
+1. Tạo VM Windows Server 2016/2019/2022, 2 vCPU / 4GB RAM là đủ cho lab.
 2. Card mạng = **Bridged**. Đặt IP tĩnh, vd `192.168.1.50`, DNS trỏ về chính nó (`127.0.0.1`).
 3. Cài role **Active Directory Domain Services** (Server Manager > Add Roles).
 4. Promote thành DC, tạo forest mới: domain root **`ecommerce.local`**. Đặt mật khẩu DSRM.
@@ -208,9 +208,13 @@ thật đến từ AD.
 
 ---
 
-## 9. Liên hệ phase sau (chưa làm bây giờ)
+## 9. Kerberos/SPNEGO Desktop SSO
 
-- **Kerberos/SPNEGO** (tự nhận diện từ máy domain-joined, không cần gõ pass): cấu hình mạng phức tạp,
-  để sau khi LDAP chạy ổn.
+LDAP federation chỉ giúp user AD đăng nhập bằng username/password trên trang Keycloak. Luồng
+"đăng nhập Win10 bằng tài khoản domain rồi vào web tự nhận tài khoản" cần Kerberos/SPNEGO,
+hostname LAN và portproxy từ Win10 VM vào WSL. Runbook hiện tại: [desktop-sso-kerberos.md](desktop-sso-kerberos.md).
+
+## 10. Liên hệ phase sau
+
 - **VPS + Tailscale**: khi deploy lên cloud, DC vẫn ở local, nối qua Tailscale; chỉ đổi
   `LDAP_CONNECTION_URL` sang IP Tailscale của DC. Hiện tại bỏ qua (chạy local).

@@ -2,11 +2,12 @@
 
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "../../lib/authOptions";
 import {
   assignRealmRoleToUser,
   revokeRealmRoleFromUser,
 } from "../../lib/keycloakAdmin";
+import { approveKycDocument, rejectKycDocument } from "../../lib/platformData";
 import { canReviewKyc } from "../../lib/scope";
 import { logAudit } from "../../lib/audit";
 
@@ -41,6 +42,7 @@ export async function grantKyc(formData: FormData) {
   });
   revalidatePath("/kyc");
   revalidatePath("/users");
+  revalidatePath("/audit");
 }
 
 export async function revokeKyc(formData: FormData) {
@@ -58,4 +60,59 @@ export async function revokeKyc(formData: FormData) {
   });
   revalidatePath("/kyc");
   revalidatePath("/users");
+  revalidatePath("/audit");
+}
+
+export async function approveKycRequest(formData: FormData) {
+  const session = await requireReviewer();
+  const kycId = parseInt(String(formData.get("kycId") ?? ""), 10);
+  if (!kycId) throw new Error("missing kycId");
+
+  const doc = await approveKycDocument(
+    kycId,
+    session.user!.id!,
+    session.user!.name ?? null
+  );
+  await logAudit({
+    actorId: session.user!.id!,
+    actorName: session.user!.name,
+    action: "kyc.approve",
+    resource: `kyc:${kycId}`,
+    metadata: {
+      source: "admin-portal",
+      targetUserId: doc.userId,
+      assignedRole: KYC_ROLE,
+      docType: doc.docType,
+    },
+  });
+  revalidatePath("/kyc");
+  revalidatePath("/users");
+  revalidatePath("/audit");
+}
+
+export async function rejectKycRequest(formData: FormData) {
+  const session = await requireReviewer();
+  const kycId = parseInt(String(formData.get("kycId") ?? ""), 10);
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!kycId) throw new Error("missing kycId");
+
+  const doc = await rejectKycDocument(
+    kycId,
+    session.user!.id!,
+    session.user!.name ?? null,
+    reason || null
+  );
+  await logAudit({
+    actorId: session.user!.id!,
+    actorName: session.user!.name,
+    action: "kyc.reject",
+    resource: `kyc:${kycId}`,
+    metadata: {
+      source: "admin-portal",
+      targetUserId: doc.userId,
+      reason: reason || undefined,
+    },
+  });
+  revalidatePath("/kyc");
+  revalidatePath("/audit");
 }

@@ -3,7 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { authOptions } from "../../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { kycDocuments } from "@/db/schema";
 import { assignRealmRoleToUser } from "../../../lib/keycloakAdmin";

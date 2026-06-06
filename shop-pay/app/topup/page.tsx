@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { topUp, getOrCreateWallet, formatVND } from "@/lib/wallet";
 import { logAudit } from "@/lib/audit";
 

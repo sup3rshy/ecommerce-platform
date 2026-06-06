@@ -2,7 +2,10 @@
 
 Hệ sinh thái thương mại điện tử đa ứng dụng, dùng chung Keycloak làm Identity Provider trung tâm cho SSO, MFA, phân quyền theo role và Single Logout. Danh tính khách hàng do Keycloak/PostgreSQL quản lý; danh tính nhân sự nền tảng (admin) do Windows Server Active Directory cấp qua LDAP federation.
 
-5 ứng dụng, tất cả đã triển khai. Hạ tầng AD/LDAP, VPS và Kerberos còn lại trong [PLAN.md](PLAN.md) (Phase 4-6).
+5 ứng dụng, tất cả đã triển khai. AD/LDAP local đã cấu hình để đăng nhập bằng tài khoản
+domain; Kerberos/SPNEGO Desktop SSO đang chạy theo hostname LAN `app.ecommerce.local`
+(xem [docs/desktop-sso-kerberos.md](docs/desktop-sso-kerberos.md)). VPS/Tailscale còn lại
+trong [PLAN.md](PLAN.md) (Phase 5).
 
 | App (sản phẩm) | Thư mục | Port | OIDC client | DB | Trạng thái |
 | --- | --- | --- | --- | --- | --- |
@@ -20,7 +23,7 @@ Hạ tầng:
 | Nginx (:8000) | Reverse proxy / điều phối duy nhất của hệ thống |
 | Postgres app (:5432) | DB cho các app (ecommerce, seller_workspace, shoppay, shopfood, admin_portal) |
 | Postgres keycloak | DB riêng cho Keycloak (nội bộ) |
-| Windows Server AD | Domain Controller — chỉ cấp danh tính cho nhân sự nền tảng (external, qua Tailscale) |
+| Windows Server AD | Domain Controller — chỉ cấp danh tính cho nhân sự nền tảng (local VMware; VPS sau qua Tailscale) |
 
 > **Đặt tên:** thư mục theo tên sản phẩm (`shop-ecommerce`, `shop-sell`, `shop-pay`, `shop-food`, `admin-portal`). Định danh nội bộ giữ tên cũ (OIDC client `nextjs-app`/`seller-workspace`/`shoppay-app`, tên DB, cookie session) để không phá realm import và secret sync.
 
@@ -35,7 +38,8 @@ Hệ quả thiết kế:
 
 - Domain Controller chỉ đóng một vai trò: cung cấp định danh. Không chứa logic ứng dụng, không cấp phát quyền ngoài việc quyết định user thuộc nhóm nào.
 - Xoá một tài khoản khỏi AD => Keycloak không còn federate được user đó => tài khoản mất quyền truy cập toàn bộ hệ sinh thái (xem PLAN.md mục deprovisioning về TTL token).
-- Giai đoạn đầu dùng LDAP (nhập tài khoản AD trên trang login Keycloak). Kerberos/SPNEGO "tự nhận diện từ máy domain-joined" là giai đoạn sau.
+- LDAP cho phép nhập tài khoản AD trên trang login Keycloak. Kerberos/SPNEGO cho phép máy
+  Win10 domain-joined tự nhận diện qua `app.ecommerce.local` khi browser gửi Negotiate.
 
 ## Vai trò (roles)
 
@@ -140,17 +144,36 @@ Sau khi chạy:
 - Admin Portal: http://localhost:3400
 - Keycloak: http://localhost:8080
 
-Cả 5 app đã nằm trong `npm run dev`. Admin Portal (:3400) đăng nhập bằng tài khoản có role admin nền tảng (vd `admin1`). Thực đơn mẫu ShopFood: `npm --prefix shop-food run db:seed`.
+Cả 5 app đã nằm trong `npm run dev`. Với lab Windows/VMware hoặc Desktop SSO, dùng chế độ Docker
+để các port app được Docker publish giống Keycloak:
+
+```bash
+npm run dev:docker
+```
+
+Admin Portal (:3400) đăng nhập bằng tài khoản có role admin nền tảng (vd `admin1`). Thực đơn mẫu ShopFood: `npm --prefix shop-food run db:seed`.
 
 Lưu ý:
 
-- Lần đầu Turbopack compile route có thể chậm; đợi log `[warm] done`.
+- Lần đầu compile route có thể chậm; đợi log `[warm] done`.
+- Docker mode ép Next chạy bằng webpack để tránh Turbopack panic trong bind-mount lab Windows/WSL.
+- `next.config.ts` của 5 app allowlist `app.ecommerce.local` cho Next dev HMR; giữ cấu hình này khi dùng hostname local-domain.
 - Khi sửa realm JSON, chạy lại `bash scripts/reset.sh` để reimport.
+- `npm run dev` chạy app trực tiếp trong WSL; `npm run dev:docker` dừng các process đó rồi chạy 5 app trong Docker Compose.
 - Không commit root `.env`.
 
-### Cấu hình AD/LDAP (nhân sự nền tảng) — chạy LOCAL
+### Cấu hình AD/LDAP và Desktop SSO — chạy LOCAL
 
 Đưa danh tính admin/*_admin từ **Windows Server AD (VMware trên máy local)** vào Keycloak qua LDAP user federation. **Chưa cần VPS/Tailscale** ở giai đoạn này. Hướng dẫn từng bước (mạng VMware Bridged, tạo OU/group/user, service account bind, User Federation, group→role mapper, test, deprovisioning): **[docs/active-directory.md](docs/active-directory.md)**. Khi chưa dựng AD, các role admin vẫn test được bằng user Keycloak-local (`admin1`).
+
+Để Win10 domain login xong mở web là vào thẳng app, dùng hostname LAN thay `localhost`:
+
+```bash
+bash scripts/use-local-domain.sh app.ecommerce.local
+bash scripts/apply-keycloak-local-domain.sh app.ecommerce.local
+```
+
+Sau đó cấu hình DNS/portproxy/browser theo [docs/desktop-sso-kerberos.md](docs/desktop-sso-kerberos.md).
 
 ## Tài khoản demo (Keycloak-local)
 
@@ -208,7 +231,7 @@ ecommerce-platform/
 
 - `invalid_client`: secret app `.env` không khớp realm => `bash scripts/bootstrap.sh && bash scripts/reset.sh`.
 - `unresolved placeholder` khi import realm: thiếu secret trong root `.env` hoặc thiếu biến trong `keycloak/entrypoint.sh` `VARS_TO_RESOLVE`.
-- ShopPay vẫn báo cần KYC sau approve: kiểm tra `kyc_documents.status=approved`, role `kyc-verified` trên Keycloak, restart dev server.
+- ShopPay vẫn báo cần KYC sau approve: duyệt tại Admin Portal `/kyc`, kiểm tra `shoppay.kyc_documents.status=approved`, role `kyc-verified` trên Keycloak, rồi logout/login lại để token mới có role.
 - `Session not active`: Keycloak đã revoke session; refresh fail bị coi như logged-out, proxy redirect signin.
 
 ## Tài liệu liên quan
@@ -216,4 +239,5 @@ ecommerce-platform/
 - [PLAN.md](PLAN.md): kế hoạch xây dựng chi tiết theo phase.
 - [TODO.md](TODO.md): checklist nhiệm vụ.
 - [docs/keycloak.md](docs/keycloak.md): truy cập Admin Console, xem nội dung realm, cơ chế lưu/tái lập cấu hình.
+- [docs/desktop-sso-kerberos.md](docs/desktop-sso-kerberos.md): Kerberos/SPNEGO từ Win10 domain-joined vào web tự động.
 - [docs/phase-1-catalog-sync.md](docs/phase-1-catalog-sync.md): Phase 1 — đồng bộ catalog ShopSell → ShopEcommerce + cách kiểm thử.

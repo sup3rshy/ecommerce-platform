@@ -30,7 +30,7 @@
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
-  "verifyEmail": true,
+  "verifyEmail": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
@@ -1100,15 +1100,23 @@
       "secret": "${NEXTJS_APP_CLIENT_SECRET}",
       "redirectUris": [
         "http://localhost:3000/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3000/api/auth/callback/keycloak",
         "http://localhost:8000/",
+        "http://app.ecommerce.local:8000/",
         "http://localhost:8000/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:8000/api/auth/callback/keycloak",
         "http://localhost:3000/",
+        "http://app.ecommerce.local:3000/",
         "http://localhost:8000",
-        "http://localhost:3000"
+        "http://app.ecommerce.local:8000",
+        "http://localhost:3000",
+        "http://app.ecommerce.local:3000"
       ],
       "webOrigins": [
         "http://localhost:8000",
-        "http://localhost:3000"
+        "http://app.ecommerce.local:8000",
+        "http://localhost:3000",
+        "http://app.ecommerce.local:3000"
       ],
       "notBefore": 0,
       "bearerOnly": false,
@@ -1121,13 +1129,13 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "frontchannel.logout.url": "http://localhost:3000/api/auth/frontchannel-logout",
+        "frontchannel.logout.url": "http://app.ecommerce.local:3000/api/auth/frontchannel-logout",
         "realm_client": "false",
         "logout.confirmation.enabled": "false",
         "oidc.ciba.grant.enabled": "false",
         "backchannel.logout.session.required": "false",
         "standard.token.exchange.enabled": "false",
-        "post.logout.redirect.uris": "http://localhost:3000##http://localhost:3000/##http://localhost:8000##http://localhost:8000/",
+        "post.logout.redirect.uris": "http://localhost:3000##http://localhost:3000/##http://localhost:8000##http://localhost:8000/##http://app.ecommerce.local:3000##http://app.ecommerce.local:3000/##http://app.ecommerce.local:8000##http://app.ecommerce.local:8000/",
         "oauth2.device.authorization.grant.enabled": "false",
         "display.on.consent.screen": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
@@ -1180,10 +1188,14 @@
       "redirectUris": [
         "http://localhost:3100",
         "http://localhost:3100/",
-        "http://localhost:3100/api/auth/callback/keycloak"
+        "http://localhost:3100/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3100",
+        "http://app.ecommerce.local:3100/",
+        "http://app.ecommerce.local:3100/api/auth/callback/keycloak"
       ],
       "webOrigins": [
-        "http://localhost:3100"
+        "http://localhost:3100",
+        "http://app.ecommerce.local:3100"
       ],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -1191,8 +1203,8 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "frontchannel.logout.url": "http://localhost:3100/api/auth/frontchannel-logout",
-        "post.logout.redirect.uris": "http://localhost:3100##http://localhost:3100/"
+        "frontchannel.logout.url": "http://app.ecommerce.local:3100/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3100##http://localhost:3100/##http://app.ecommerce.local:3100##http://app.ecommerce.local:3100/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -1245,10 +1257,14 @@
       "redirectUris": [
         "http://localhost:3200",
         "http://localhost:3200/",
-        "http://localhost:3200/api/auth/callback/keycloak"
+        "http://localhost:3200/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3200",
+        "http://app.ecommerce.local:3200/",
+        "http://app.ecommerce.local:3200/api/auth/callback/keycloak"
       ],
       "webOrigins": [
-        "http://localhost:3200"
+        "http://localhost:3200",
+        "http://app.ecommerce.local:3200"
       ],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -1256,8 +1272,8 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "frontchannel.logout.url": "http://localhost:3200/api/auth/frontchannel-logout",
-        "post.logout.redirect.uris": "http://localhost:3200##http://localhost:3200/"
+        "frontchannel.logout.url": "http://app.ecommerce.local:3200/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3200##http://localhost:3200/##http://app.ecommerce.local:3200##http://app.ecommerce.local:3200/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -1294,10 +1310,14 @@
       "redirectUris": [
         "http://localhost:3300",
         "http://localhost:3300/",
-        "http://localhost:3300/api/auth/callback/keycloak"
+        "http://localhost:3300/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3300",
+        "http://app.ecommerce.local:3300/",
+        "http://app.ecommerce.local:3300/api/auth/callback/keycloak"
       ],
       "webOrigins": [
-        "http://localhost:3300"
+        "http://localhost:3300",
+        "http://app.ecommerce.local:3300"
       ],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -1305,8 +1325,8 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "frontchannel.logout.url": "http://localhost:3300/api/auth/frontchannel-logout",
-        "post.logout.redirect.uris": "http://localhost:3300##http://localhost:3300/"
+        "frontchannel.logout.url": "http://app.ecommerce.local:3300/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3300##http://localhost:3300/##http://app.ecommerce.local:3300##http://app.ecommerce.local:3300/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -1343,10 +1363,15 @@
       "redirectUris": [
         "http://localhost:3400",
         "http://localhost:3400/",
-        "http://localhost:3400/api/auth/callback/keycloak"
+        "http://localhost:3400/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3400",
+        "http://app.ecommerce.local:3400/",
+        "http://app.ecommerce.local:3400/api/auth/callback/keycloak",
+        "http://app.ecommerce.local:3400/*"
       ],
       "webOrigins": [
-        "http://localhost:3400"
+        "http://localhost:3400",
+        "http://app.ecommerce.local:3400"
       ],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
@@ -1354,8 +1379,8 @@
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
-        "frontchannel.logout.url": "http://localhost:3400/api/auth/frontchannel-logout",
-        "post.logout.redirect.uris": "http://localhost:3400##http://localhost:3400/"
+        "frontchannel.logout.url": "http://app.ecommerce.local:3400/api/auth/frontchannel-logout",
+        "post.logout.redirect.uris": "http://localhost:3400##http://localhost:3400/##http://app.ecommerce.local:3400##http://app.ecommerce.local:3400/"
       },
       "fullScopeAllowed": true,
       "protocolMappers": [
@@ -2485,10 +2510,18 @@
           "userSetupAllowed": false
         },
         {
-          "authenticator": "identity-provider-redirector",
+          "authenticator": "auth-spnego",
           "authenticatorFlow": false,
           "requirement": "ALTERNATIVE",
           "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 25,
           "autheticatorFlow": false,
           "userSetupAllowed": false
         },
@@ -2849,7 +2882,7 @@
         {
           "authenticator": "auth-spnego",
           "authenticatorFlow": false,
-          "requirement": "DISABLED",
+          "requirement": "ALTERNATIVE",
           "priority": 20,
           "autheticatorFlow": false,
           "userSetupAllowed": false

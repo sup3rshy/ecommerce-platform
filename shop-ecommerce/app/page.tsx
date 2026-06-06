@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { and, eq, gte, ilike, lte, sql } from "drizzle-orm";
 
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import LogoutButton from "./components/LogoutButton";
 import CheckoutButton from "./components/CheckoutButton";
 import AddToCartButton from "./components/AddToCartButton";

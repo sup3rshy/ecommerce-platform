@@ -2,7 +2,7 @@
 
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "../../lib/authOptions";
 import {
   assignRealmRoleToUser,
   revokeRealmRoleFromUser,

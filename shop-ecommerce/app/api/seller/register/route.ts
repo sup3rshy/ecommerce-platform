@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
-import { authOptions } from "../../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "../../../../db";
 import { sellerUpgradeRequests, stores } from "../../../../db/schema";
 

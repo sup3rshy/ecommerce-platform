@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { verify } from "../../../lib/sig";
 import { db } from "../../../db";
 import { orders } from "../../../db/schema";

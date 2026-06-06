@@ -131,6 +131,7 @@ if [ ! -f admin-portal/.env ]; then
   cat > admin-portal/.env <<EOF
 DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/admin_portal
 ECOMMERCE_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/ecommerce
+SHOPPAY_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/shoppay
 SHOPFOOD_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/shopfood
 
 NEXTAUTH_URL=http://localhost:3400
@@ -148,8 +149,15 @@ fi
 if ! grep -q '^ECOMMERCE_DATABASE_URL=' admin-portal/.env 2>/dev/null; then
   sed -i "/^DATABASE_URL=/a ECOMMERCE_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/ecommerce\\nSHOPFOOD_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/shopfood" admin-portal/.env
 fi
+if ! grep -q '^SHOPPAY_DATABASE_URL=' admin-portal/.env 2>/dev/null; then
+  sed -i "/^DATABASE_URL=/a SHOPPAY_DATABASE_URL=postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/shoppay" admin-portal/.env
+fi
 
 echo
 echo "✓ Bootstrap done. Tiếp theo:"
 echo "    bash scripts/reset.sh   # up infra + push DB schema"
 echo "    npm install && npm run dev"
+echo
+echo "Desktop SSO từ máy Win10 domain-joined:"
+echo "    bash scripts/use-local-domain.sh app.ecommerce.local"
+echo "    bash scripts/apply-keycloak-local-domain.sh app.ecommerce.local"

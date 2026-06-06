@@ -2,7 +2,7 @@ import { Pool } from "pg";
 
 import { assignRealmRoleToUser } from "./keycloakAdmin";
 
-type DbName = "ecommerce" | "shopfood";
+type DbName = "ecommerce" | "shopfood" | "shoppay";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -23,13 +23,18 @@ function databaseUrlFor(envName: string, dbName: DbName): string {
   return url.toString();
 }
 
+function envNameFor(dbName: DbName): string {
+  if (dbName === "ecommerce") return "ECOMMERCE_DATABASE_URL";
+  if (dbName === "shopfood") return "SHOPFOOD_DATABASE_URL";
+  return "SHOPPAY_DATABASE_URL";
+}
+
 function poolFor(dbName: DbName): Pool {
   const key = dbName;
   globalThis.__adminPortalPlatformPools ??= {};
   if (!globalThis.__adminPortalPlatformPools[key]) {
-    const envName = dbName === "ecommerce" ? "ECOMMERCE_DATABASE_URL" : "SHOPFOOD_DATABASE_URL";
     globalThis.__adminPortalPlatformPools[key] = new Pool({
-      connectionString: databaseUrlFor(envName, dbName),
+      connectionString: databaseUrlFor(envNameFor(dbName), dbName),
     });
   }
   return globalThis.__adminPortalPlatformPools[key]!;
@@ -259,6 +264,227 @@ export type FoodOverview = {
   recentOrders: FoodOrderSummary[];
   pendingFoodSellerRequests: UpgradeRequest[];
 };
+
+export type KycDocumentSummary = {
+  id: number;
+  userId: string;
+  fullName: string;
+  docType: string;
+  docNumber: string;
+  status: "pending" | "approved" | "rejected" | string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewerNote: string | null;
+};
+
+export type KycOverview = {
+  pending: KycDocumentSummary[];
+  reviewed: KycDocumentSummary[];
+  stats: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
+};
+
+function mapKycDocument(row: Record<string, unknown>): KycDocumentSummary {
+  return {
+    id: num(row.id),
+    userId: String(row.userId ?? ""),
+    fullName: String(row.fullName ?? ""),
+    docType: String(row.docType ?? ""),
+    docNumber: String(row.docNumber ?? ""),
+    status: String(row.status ?? "pending"),
+    submittedAt: iso(row.submittedAt),
+    reviewedAt: iso(row.reviewedAt),
+    reviewerNote: str(row.reviewerNote),
+  };
+}
+
+export async function getKycOverview(): Promise<KycOverview> {
+  const rows = await query<Record<string, unknown>>(
+    "shoppay",
+    `
+      select
+        id,
+        user_id as "userId",
+        full_name as "fullName",
+        doc_type as "docType",
+        doc_number as "docNumber",
+        status,
+        submitted_at as "submittedAt",
+        reviewed_at as "reviewedAt",
+        reviewer_note as "reviewerNote"
+      from kyc_documents
+      order by
+        case when status = 'pending' then 0 else 1 end,
+        submitted_at desc nulls last,
+        id desc
+      limit 200
+    `
+  );
+  const docs = rows.map(mapKycDocument);
+  const pending = docs.filter((doc) => doc.status === "pending");
+  const reviewed = docs.filter((doc) => doc.status !== "pending");
+
+  return {
+    pending,
+    reviewed,
+    stats: {
+      total: docs.length,
+      pending: pending.length,
+      approved: docs.filter((doc) => doc.status === "approved").length,
+      rejected: docs.filter((doc) => doc.status === "rejected").length,
+    },
+  };
+}
+
+export async function approveKycDocument(
+  kycId: number,
+  actorId: string,
+  actorName: string | null
+): Promise<KycDocumentSummary> {
+  const pool = poolFor("shoppay");
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const current = await client.query(
+      `
+        select
+          id,
+          user_id as "userId",
+          full_name as "fullName",
+          doc_type as "docType",
+          doc_number as "docNumber",
+          status,
+          submitted_at as "submittedAt",
+          reviewed_at as "reviewedAt",
+          reviewer_note as "reviewerNote"
+        from kyc_documents
+        where id = $1
+        for update
+      `,
+      [kycId]
+    );
+    const row = current.rows[0] as Record<string, unknown> | undefined;
+    if (!row) throw new Error("Không tìm thấy hồ sơ KYC.");
+
+    if (row.status !== "pending" && row.status !== "approved") {
+      throw new Error("Chỉ hồ sơ pending mới có thể duyệt.");
+    }
+
+    const updated = await client.query(
+      `
+        update kyc_documents
+        set
+          status = 'approved',
+          reviewed_at = now(),
+          reviewer_note = $2
+        where id = $1
+        returning
+          id,
+          user_id as "userId",
+          full_name as "fullName",
+          doc_type as "docType",
+          doc_number as "docNumber",
+          status,
+          submitted_at as "submittedAt",
+          reviewed_at as "reviewedAt",
+          reviewer_note as "reviewerNote"
+      `,
+      [kycId, `Approved from Admin Portal by ${actorName ?? actorId}`]
+    );
+    const updatedDoc = mapKycDocument(updated.rows[0] as Record<string, unknown>);
+
+    await client.query(
+      `
+        insert into audit_logs (actor_id, actor_name, action, resource, metadata)
+        values ($1, $2, 'kyc.approve', $3, $4::jsonb)
+      `,
+      [
+        actorId,
+        actorName,
+        `kyc:${kycId}`,
+        JSON.stringify({
+          source: "admin-portal",
+          targetUserId: updatedDoc.userId,
+          assignedRole: "kyc-verified",
+          docType: row.docType,
+        }),
+      ]
+    );
+
+    await assignRealmRoleToUser(updatedDoc.userId, "kyc-verified");
+    await client.query("commit");
+    return updatedDoc;
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function rejectKycDocument(
+  kycId: number,
+  actorId: string,
+  actorName: string | null,
+  reason: string | null
+): Promise<KycDocumentSummary> {
+  const pool = poolFor("shoppay");
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const updated = await client.query(
+      `
+        update kyc_documents
+        set
+          status = 'rejected',
+          reviewed_at = now(),
+          reviewer_note = $2
+        where id = $1 and status = 'pending'
+        returning
+          id,
+          user_id as "userId",
+          full_name as "fullName",
+          doc_type as "docType",
+          doc_number as "docNumber",
+          status,
+          submitted_at as "submittedAt",
+          reviewed_at as "reviewedAt",
+          reviewer_note as "reviewerNote"
+      `,
+      [kycId, reason || `Rejected from Admin Portal by ${actorName ?? actorId}`]
+    );
+    const row = updated.rows[0] as Record<string, unknown> | undefined;
+    if (!row) throw new Error("Không tìm thấy hồ sơ KYC đang chờ để từ chối.");
+
+    await client.query(
+      `
+        insert into audit_logs (actor_id, actor_name, action, resource, metadata)
+        values ($1, $2, 'kyc.reject', $3, $4::jsonb)
+      `,
+      [
+        actorId,
+        actorName,
+        `kyc:${kycId}`,
+        JSON.stringify({
+          source: "admin-portal",
+          targetUserId: row.userId,
+          reason: reason || undefined,
+        }),
+      ]
+    );
+    await client.query("commit");
+    return mapKycDocument(row);
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export async function getFoodOverview(): Promise<FoodOverview> {
   const [restaurants, menuStats, orderStats, menu, orders, requests] = await Promise.all([

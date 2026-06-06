@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from "@/db";
 import { kycDocuments } from "@/db/schema";
 
@@ -141,11 +141,13 @@ export default async function KycPage() {
       </section>
 
       <div className="alert-info">
-        💡 Sau khi nộp, reviewer (role <code className="code-inline">admin</code> hoặc
-        <code className="code-inline">pay_admin</code>) sẽ duyệt qua{" "}
-        <a href="/kyc/admin">/kyc/admin</a> → khi approve, ShopPay tự gọi Keycloak
-        Admin API gán role <code className="code-inline">kyc-verified</code> cho bạn.
-        Bạn cần logout/login lại để token mới có role này.
+        Sau khi nộp, reviewer (role <code className="code-inline">admin</code> hoặc
+        <code className="code-inline">pay_admin</code>) duyệt tập trung ở Admin
+        Portal <code className="code-inline">/kyc</code>. Màn{" "}
+        <a href="/kyc/admin">/kyc/admin</a> của ShopPay vẫn dùng được cho kiểm thử
+        cục bộ. Khi approve, hệ thống gán role{" "}
+        <code className="code-inline">kyc-verified</code>; bạn cần logout/login lại
+        để token mới có role này.
       </div>
     </div>
   );

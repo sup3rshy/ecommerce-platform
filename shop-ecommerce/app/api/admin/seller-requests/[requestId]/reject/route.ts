@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { sellerUpgradeRequests } from "@/db/schema";
-import { authOptions } from "../../../../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 
 type RejectSellerRequestParams = {
   params: Promise<{ requestId: string }>;

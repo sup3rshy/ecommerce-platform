@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n web,seller,pay,food,admin,warm -c blue,green,magenta,yellow,cyan,gray \"npm --prefix shop-ecommerce run dev\" \"npm --prefix shop-sell run dev\" \"npm --prefix shop-pay run dev\" \"npm --prefix shop-food run dev\" \"npm --prefix admin-portal run dev\" \"bash scripts/warmup.sh\"",
+    "dev:docker": "bash scripts/stop-local-next.sh && docker compose up -d && bash scripts/warmup.sh",
+    "dev:docker:logs": "docker compose logs -f shop-ecommerce-app shop-sell-app shop-pay-app shop-food-app admin-portal-app",
+    "dev:docker:stop": "docker compose stop shop-ecommerce-app shop-sell-app shop-pay-app shop-food-app admin-portal-app",
     "dev:webpack": "concurrently -n web,seller,pay,food,admin -c blue,green,magenta,yellow,cyan \"npm --prefix shop-ecommerce run dev -- --webpack\" \"npm --prefix shop-sell run dev -- --webpack\" \"npm --prefix shop-pay run dev -- --webpack\" \"npm --prefix shop-food run dev -- --webpack\" \"npm --prefix admin-portal run dev -- --webpack\"",
     "db:push": "cd shop-ecommerce && npx drizzle-kit push && cd ../shop-sell && npm run db:push && cd ../shop-pay && npm run db:push && cd ../shop-food && npm run db:push && cd ../admin-portal && npm run db:push"
   },
