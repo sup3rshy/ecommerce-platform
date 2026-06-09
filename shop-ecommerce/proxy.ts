@@ -15,7 +15,7 @@ export async function proxy(req: NextRequest) {
     if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const signInUrl = new URL("/api/auth/signin", req.url);
+    const signInUrl = new URL("/auth/sso", req.url);
     signInUrl.searchParams.set("callbackUrl", path);
     return NextResponse.redirect(signInUrl);
   }

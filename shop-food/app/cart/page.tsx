@@ -14,7 +14,7 @@ const formatVnd = (value: number) => `${value.toLocaleString("vi-VN")} đ`;
 async function removeItem(formData: FormData) {
   "use server";
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/cart");
   const id = Number(formData.get("cartItemId"));
   if (!Number.isInteger(id) || id <= 0) return;
   await db
@@ -26,7 +26,7 @@ async function removeItem(formData: FormData) {
 async function checkout() {
   "use server";
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/cart");
   const roles = session.user.roles ?? [];
   if (!roles.includes("buyer")) return;
   const userId = session.user.id;
@@ -82,7 +82,7 @@ async function checkout() {
 
 export default async function CartPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/cart");
   const roles = session.user.roles ?? [];
   if (!roles.includes("buyer")) redirect("/denied");
 

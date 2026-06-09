@@ -34,7 +34,7 @@ const NEXT_STEP: Record<string, { status: string; label: string } | null> = {
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/admin");
   if (!isFoodAdmin(session.user.roles ?? [])) redirect("/denied");
   return session.user.id as string;
 }
@@ -120,7 +120,7 @@ async function advanceOrder(formData: FormData) {
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/admin");
   if (!isFoodAdmin(session.user.roles ?? [])) redirect("/denied");
 
   const menu = await db.select().from(menuItems).orderBy(desc(menuItems.createdAt));

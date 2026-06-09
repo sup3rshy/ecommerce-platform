@@ -86,7 +86,7 @@ async function revokeStaff(formData: FormData) {
 
 export default async function StaffPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/staff");
 
   // Shop của user lấy từ Keycloak group (/store-demo-N). Không thuộc shop nào
   // (vd admin/ecommerce_admin nền tảng) thì không có roster để quản lý.

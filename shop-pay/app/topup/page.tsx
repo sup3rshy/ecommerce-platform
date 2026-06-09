@@ -45,7 +45,7 @@ async function doTopUp(formData: FormData) {
 
 export default async function TopUpPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/topup");
 
   const wallet = await getOrCreateWallet(session.user.id);
 

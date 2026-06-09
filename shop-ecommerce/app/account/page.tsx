@@ -7,7 +7,7 @@ export default async function AccountPage() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
-    redirect("/api/auth/signin/keycloak");
+    redirect("/auth/sso?callbackUrl=/account");
   }
 
   const roles = session.user.roles ?? [];

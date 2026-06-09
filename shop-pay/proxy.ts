@@ -12,7 +12,7 @@ export async function proxy(req: NextRequest) {
   });
 
   if (!token || token.error === "RefreshAccessTokenError") {
-    const signInUrl = new URL("/api/auth/signin", req.url);
+    const signInUrl = new URL("/auth/sso", req.url);
     // Giữ cả query string vào callbackUrl — quan trọng cho /pay vì params thanh toán nằm ở đó
     signInUrl.searchParams.set(
       "callbackUrl",

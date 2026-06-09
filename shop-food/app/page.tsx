@@ -14,7 +14,7 @@ const formatVnd = (value: number) => `${value.toLocaleString("vi-VN")} đ`;
 async function addToCart(formData: FormData) {
   "use server";
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/");
   const roles = session.user.roles ?? [];
   if (!roles.includes("buyer")) return;
 

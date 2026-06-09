@@ -74,7 +74,7 @@ type PageProps = {
 
 export default async function OrdersPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/orders");
   const roles = session.user.roles ?? [];
   if (!canManage(roles)) redirect("/denied");
 

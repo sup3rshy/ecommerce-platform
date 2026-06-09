@@ -89,7 +89,7 @@ export default function SidebarNav({ isAuthenticated, userName, roles, idToken }
           </>
         ) : (
           <Link
-            href="/api/auth/signin/keycloak"
+            href="/auth/sso?callbackUrl=/"
             className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
             Đăng nhập với Keycloak

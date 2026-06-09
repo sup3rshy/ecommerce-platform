@@ -16,7 +16,7 @@ async function robustSignIn(provider: string, callbackUrl = "/users") {
     // fall through
   }
   // Fallback nếu fetch /api/auth/csrf timeout (Turbopack đang compile lần đầu)
-  window.location.href = `/api/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  window.location.href = `/auth/sso?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 }
 
 function SignInButton() {

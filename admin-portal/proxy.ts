@@ -51,7 +51,7 @@ export async function proxy(req: NextRequest) {
   });
 
   if (!token || token.error === "RefreshAccessTokenError") {
-    const signInUrl = new URL("/api/auth/signin", req.url);
+    const signInUrl = new URL("/auth/sso", req.url);
     signInUrl.searchParams.set("callbackUrl", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }

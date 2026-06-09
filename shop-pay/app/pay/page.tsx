@@ -50,7 +50,7 @@ export default async function PayPage({
   // 3. Yêu cầu user login (proxy.ts đã chặn nhưng double-check)
   if (!session?.user?.id) {
     redirect(
-      `/api/auth/signin?callbackUrl=${encodeURIComponent(
+      `/auth/sso?callbackUrl=${encodeURIComponent(
         `/pay?merchant=${merchant}&orderId=${orderId}&amount=${amount}&returnUrl=${encodeURIComponent(returnUrl)}&nonce=${nonce}&sig=${sig}`
       )}`
     );

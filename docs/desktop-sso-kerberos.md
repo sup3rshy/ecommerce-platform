@@ -348,6 +348,11 @@ Không dùng `localhost:3400` cho Desktop SSO/admin auth vì cookie, callback UR
 `app.ecommerce.local`. Admin Portal hiện redirect loopback sang host canonical để tránh reload loop,
 nhưng URL cần kiểm thử vẫn là `http://app.ecommerce.local:3400`.
 
+Các app dùng route trung gian `/auth/sso` để tự khởi tạo NextAuth `signIn("keycloak")`. Vì vậy
+route cần đăng nhập sẽ đi theo chuỗi app -> `/auth/sso` -> Keycloak authorize; người dùng không
+phải bấm trang NextAuth mặc định hoặc nút `Sign in with Keycloak`. Nếu thấy trang provider mặc
+định của NextAuth, kiểm tra còn link/redirect nào trỏ tới `/api/auth/signin` thay vì `/auth/sso`.
+
 Nếu browser hiện popup native kiểu `Sign in http://app.ecommerce.local:8080` trước form Keycloak,
 đó là Kerberos/SPNEGO challenge từ Keycloak (`WWW-Authenticate: Negotiate`), không phải UI của app.
 Popup này xuất hiện khi browser không tự gửi được Kerberos ticket. Thường gặp khi mở từ máy thật

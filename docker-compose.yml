@@ -70,6 +70,7 @@ services:
       # Keycloak directory-import yêu cầu tên file = {realm-name}-realm.json
       - ./keycloak/ecommerce-realm.json:/opt/keycloak/data/import-template/ecommerce-realm-realm.json:ro
       - ./keycloak/entrypoint.sh:/custom-entrypoint.sh:ro
+      - ./keycloak/themes/ecommerce:/opt/keycloak/themes/ecommerce:ro
       - ./keycloak/krb5.conf:/opt/keycloak/conf/krb5.conf:ro
       - ./keycloak/keytabs:/opt/keycloak/conf/keytabs:ro
     depends_on:

@@ -1,13 +1,34 @@
 "use client";
 
 import { useEffect } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
 const LOGOUT_STORAGE_KEY = "sso:frontchannel-logout-at";
 
 // Lắng nghe marker do frontchannel-logout đặt vào localStorage (Keycloak iframe).
 // Khi user logout ở app khác trong SSO, tab này tự signOut + reload.
 export function SingleLogoutWatcher() {
+  const { data: session } = useSession();
+
+  useEffect(() => {
+    if (session?.error !== "RefreshAccessTokenError") return;
+    if (window.location.pathname.startsWith("/auth/sso")) return;
+
+    let cancelled = false;
+    const callbackUrl = `${window.location.pathname}${window.location.search}`;
+    void signOut({ redirect: false }).then(() => {
+      if (!cancelled) {
+        window.location.assign(
+          `/auth/sso?callbackUrl=${encodeURIComponent(callbackUrl)}`
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.error]);
+
   useEffect(() => {
     let handledValue: string | null = null;
 

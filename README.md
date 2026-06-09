@@ -40,6 +40,10 @@ Hệ quả thiết kế:
 - Xoá một tài khoản khỏi AD => Keycloak không còn federate được user đó => tài khoản mất quyền truy cập toàn bộ hệ sinh thái (xem PLAN.md mục deprovisioning về TTL token).
 - LDAP cho phép nhập tài khoản AD trên trang login Keycloak. Kerberos/SPNEGO cho phép máy
   Win10 domain-joined tự nhận diện qua `app.ecommerce.local` khi browser gửi Negotiate.
+- Các app không redirect người dùng vào trang sign-in mặc định của NextAuth nữa. Route cần
+  đăng nhập đi qua `/auth/sso`, trang này tự gọi `signIn("keycloak")` để khởi tạo OIDC/SSO,
+  nên khi đã có session Keycloak/desktop SSO thì mở app khác sẽ tự vào tiếp mà không phải bấm
+  thêm nút "Sign in with Keycloak".
 
 ## Vai trò (roles)
 
@@ -198,7 +202,8 @@ Sau đó cấu hình DNS/portproxy/browser theo [docs/desktop-sso-kerberos.md](d
 Chạy mỗi kịch bản trong incognito mới để tránh session cũ.
 
 - **A. Smoke**: `curl` issuer Keycloak + 5 app trả 200/redirect hợp lệ.
-- **B. SSO cross-app**: login `seller1` ở :3000, mở :3100 không phải nhập lại pass.
+- **B. SSO cross-app**: login `seller1` ở :3000, mở :3100 tự chuyển qua `/auth/sso`
+  rồi vào app nếu Keycloak còn session; không phải bấm trang sign-in/provider của NextAuth.
 - **C. ShopSell role guard**: `buyer1` vào :3100 bị đẩy `/denied`.
 - **D. ShopPay TOTP**: login ví yêu cầu OTP theo flow `browser-shoppay`.
 - **E. KYC + topup > 5tr**: nộp KYC, admin approve, logout/login lấy token mới có `kyc-verified`, topup thành công.
@@ -232,7 +237,9 @@ ecommerce-platform/
 - `invalid_client`: secret app `.env` không khớp realm => `bash scripts/bootstrap.sh && bash scripts/reset.sh`.
 - `unresolved placeholder` khi import realm: thiếu secret trong root `.env` hoặc thiếu biến trong `keycloak/entrypoint.sh` `VARS_TO_RESOLVE`.
 - ShopPay vẫn báo cần KYC sau approve: duyệt tại Admin Portal `/kyc`, kiểm tra `shoppay.kyc_documents.status=approved`, role `kyc-verified` trên Keycloak, rồi logout/login lại để token mới có role.
-- `Session not active`: Keycloak đã revoke session; refresh fail bị coi như logged-out, proxy redirect signin.
+- `Session not active`: Keycloak đã revoke session; refresh fail bị coi như logged-out, proxy redirect `/auth/sso`.
+- Nếu thấy trang NextAuth mặc định có nút `Sign in with Keycloak`, nghĩa là còn code/link trỏ
+  trực tiếp tới `/api/auth/signin`; pattern hiện tại là trỏ route/page/link tới `/auth/sso`.
 
 ## Tài liệu liên quan
 

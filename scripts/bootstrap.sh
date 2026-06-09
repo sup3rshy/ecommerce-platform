@@ -37,11 +37,11 @@ SHOPFOOD_CLIENT_SECRET=$SHOPFOOD_CLIENT_SECRET
 ADMIN_PORTAL_CLIENT_SECRET=$ADMIN_PORTAL_CLIENT_SECRET
 BACKEND_ADMIN_CLIENT_SECRET=$BACKEND_ADMIN_CLIENT_SECRET
 
-SMTP_PASSWORD=changeme-not-used-yet
+SMTP_PASSWORD=changeme-app-password-from-gmail-or-equivalent
 MERCHANT_HMAC_SECRET=$MERCHANT_HMAC_SECRET
 CATALOG_SYNC_SECRET=$CATALOG_SYNC_SECRET
 
-# Google IdP — để "disabled" cho đến khi đăng ký Google OAuth client
+# Google IdP — để "disabled" cho đến khi đăng ký Google OAuth client localhost
 GOOGLE_IDP_CLIENT_ID=disabled
 GOOGLE_IDP_CLIENT_SECRET=disabled
 EOF

@@ -16,7 +16,7 @@ const ACTION_BADGE: Record<string, string> = {
 
 export default async function AuditPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin?callbackUrl=/audit");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/audit");
 
   const roles = session.user.roles ?? [];
   if (!roles.some((r) => VIEWER_ROLES.includes(r))) {

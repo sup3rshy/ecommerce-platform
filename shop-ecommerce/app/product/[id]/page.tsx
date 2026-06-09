@@ -79,7 +79,7 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
             </div>
           ) : (
             <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-800">
-              Vui lòng <Link href="/api/auth/signin/keycloak" className="font-semibold underline">đăng nhập</Link> để thêm sản phẩm vào giỏ hàng.
+              Vui lòng <Link href={`/auth/sso?callbackUrl=${encodeURIComponent(`/product/${product.id}`)}`} className="font-semibold underline">đăng nhập</Link> để thêm sản phẩm vào giỏ hàng.
             </div>
           )}
 

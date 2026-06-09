@@ -1,6 +1,6 @@
 # Context - Ngữ cảnh dự án (lưu cho các phiên sau)
 
-File này tổng hợp toàn bộ ngữ cảnh đã trao đổi để tiếp tục công việc ở phiên sau. Cập nhật lần cuối trong phiên tái cấu trúc + viết kế hoạch.
+File này tổng hợp toàn bộ ngữ cảnh đã trao đổi để tiếp tục công việc ở phiên sau. Cập nhật lần cuối: phiên 2026-06-07 bật live required action VERIFY_EMAIL + xoá user odixe* — xem mục 24.
 
 ## 1. Dự án là gì
 
@@ -282,3 +282,289 @@ Verify đã chạy:
 - Smoke server action approve có cleanup: tạo hồ sơ KYC tạm cho `buyer3`, POST đúng server action approve trên `/kyc`, DB chuyển sang `approved`, role `kyc-verified` được gán; sau đó đã thu hồi role, xoá hồ sơ tạm và audit tạm. DB `shoppay.kyc_documents` sau cleanup chỉ còn 2 hồ sơ thật pending (`buyer1`, `buyer2`).
 
 Việc còn nên test thủ công bằng trình duyệt thật: đăng nhập Admin Portal bằng `ad-admin` hoặc `admin1`, mở `/kyc`, bấm duyệt một hồ sơ thật, xác nhận ShopPay `/wallet` thấy `status=approved`; user cần logout/login lại để token có `kyc-verified`.
+
+## 18. Bỏ bước bấm Login + Sign in with Keycloak khi cross-app SSO (phiên 2026-06-06)
+
+Người dùng báo: khi đã đăng nhập SSO ở một web, mở web khác vẫn phải bấm "Đăng nhập" rồi bấm tiếp "Sign in with Keycloak". Nguyên nhân: các proxy/page guard redirect tới `/api/auth/signin`; NextAuth v4 render trang sign-in mặc định với form provider. Đổi thẳng sang GET `/api/auth/signin/keycloak` cũng **không đủ**, vì GET provider route vẫn render form POST của NextAuth.
+
+Quyết định/pattern mới:
+- Mỗi app có route public `/auth/sso`.
+- `/auth/sso` render `AutoSsoSignIn` client component, tự gọi `signIn("keycloak", { callbackUrl })`. Đây là luồng chuẩn của NextAuth: lấy CSRF, POST `/api/auth/signin/keycloak`, nhận URL authorize Keycloak kèm `state` + PKCE.
+- Proxy/page/server-action guard **không trỏ `/api/auth/signin` nữa**; trỏ `/auth/sso?callbackUrl=...`.
+- Link/nút login public (ShopEcommerce, TopBar fallback các app) cũng trỏ `/auth/sso`; TopBar vẫn ưu tiên `signIn("keycloak")` trực tiếp, fallback mới là `/auth/sso`.
+- ShopSell proxy phải exclude `/auth/sso` khỏi matcher vì ShopSell bảo vệ gần như toàn bộ app.
+
+Files chính đã sửa:
+- Thêm `app/auth/sso/page.tsx` + `AutoSsoSignIn.tsx` cho đủ 5 app: `shop-ecommerce`, `shop-sell`, `shop-pay`, `shop-food`, `admin-portal`.
+- Sửa proxy: `shop-ecommerce/proxy.ts`, `shop-sell/proxy.ts`, `shop-pay/proxy.ts`, `shop-food/proxy.ts`, `admin-portal/proxy.ts`.
+- Sửa redirect server-side trong các page/action cần login: ShopSell `/dashboard`,`/products`,`/orders`,`/staff`,`/audit`; ShopPay `/wallet`,`/topup`,`/kyc`,`/kyc/admin`,`/audit`,`/pay`; ShopFood `/`, `/cart`, `/orders`, `/admin`; ShopEcommerce `/account` + login links.
+- Docs cập nhật: `README.md`, `docs/desktop-sso-kerberos.md`, `admin-portal/README.md`, `shop-pay/README.md`, `TODO.md`, `CONTEXT.md`.
+
+Verify đã chạy:
+- `./node_modules/.bin/tsc --noEmit` sạch cho cả 5 app.
+- `npm run dev:docker` đã start stack + warmup thành công (không reset/wipe volume).
+- `rg '/api/auth/signin' ... | rg -v '/api/auth/signin/keycloak'` trước khi đổi route đã sạch; sau pattern mới, code app không còn dùng `/api/auth/signin` làm redirect guard.
+- Curl protected routes không session:
+  - `3100/dashboard` -> `307 /auth/sso?callbackUrl=%2Fdashboard`
+  - `3200/wallet` -> `307 /auth/sso?callbackUrl=%2Fwallet`
+  - `3300/cart` -> `307 /auth/sso?callbackUrl=%2Fcart`
+  - canonical `3400/users` -> `307 /auth/sso?callbackUrl=%2Fusers`
+- Mô phỏng NextAuth client sign-in bằng CSRF + POST `/api/auth/signin/keycloak` trả JSON `url` tới Keycloak authorize cho đủ 5 client (`nextjs-app`, `seller-workspace`, `shoppay-app`, `shopfood-app`, `admin-portal`) với redirect URI `http://app.ecommerce.local:<port>/api/auth/callback/keycloak`.
+- `/auth/sso` render trạng thái "Đang chuyển tới SSO..." và inject CSS ẩn `.topbar, aside` để không còn thấy nút login/provider trong lúc auto-redirect.
+
+Việc còn nên test thủ công: trong browser thật/domain-joined Win10, đăng nhập một app rồi mở app khác (vd `:3000` -> `:3100`, `:3400/users`), kỳ vọng chỉ thấy chuyển nhanh qua `/auth/sso`/Keycloak rồi vào app, không thấy trang NextAuth "Sign in with Keycloak". Nếu browser hiện popup native `Sign in http://app.ecommerce.local:8080`, đó là Kerberos/SPNEGO challenge từ Keycloak, xem mục 16 và `docs/desktop-sso-kerberos.md`.
+
+## 19. Google login + SMTP (quên mật khẩu + verify email đăng ký) — chế độ localhost (phiên 2026-06-06)
+
+Người dùng chốt 3 giá trị thật để bật social login + email: Google `clientId`/`clientSecret`, và Gmail **app password** (16 ký tự) của tài khoản `minhtrietlove@gmail.com`. Yêu cầu: truy cập web trên trình duyệt **máy thật**, demo đăng nhập Google, quên mật khẩu gửi email reset, và verify email khi đăng ký — tất cả qua SMTP.
+
+**Quyết định cốt lõi (ràng buộc Google):** Google OAuth từ chối redirect URI `http://app.ecommerce.local/...` (chỉ nhận HTTPS công khai, hoặc HTTP với `localhost`/`127.0.0.1`; chặn TLD `.local`). Nên demo này chạy ở **chế độ localhost**, tách khỏi chế độ AD/Kerberos (`app.ecommerce.local`). Người dùng đã chọn "localhost trên máy thật".
+
+**Runtime chốt cho chế độ localhost:** app chạy **WSL-native (`npm run dev`)**, KHÔNG dùng Docker app container. Lý do: để issuer nhất quán `http://localhost:8080` cho cả front-channel (trình duyệt) lẫn back-channel (app trong WSL gọi Keycloak Docker qua localhost:8080). Docker là **engine native trong WSL** (không phải Docker Desktop) nên port WSL-native và Docker-published đều đi qua WSL localhost-forwarding như nhau (Windows vào được `localhost:8080` của Keycloak => cũng vào được `localhost:3000` của Next WSL-native). Hạ tầng (Keycloak + 2 Postgres) vẫn chạy Docker.
+
+**Đã làm (LIVE realm qua Admin API, không reset — và sửa nguồn cho reset sau):**
+- Root `.env`: `SMTP_PASSWORD=<app password>`, `GOOGLE_IDP_CLIENT_ID`, `GOOGLE_IDP_CLIENT_SECRET` (trước là `disabled`).
+- LIVE realm: smtpServer = `smtp.gmail.com:465` SSL, `auth=true`, `user=from=minhtrietlove@gmail.com`, password=app password; Google IdP `enabled=true`, `trustEmail=true`, clientId/secret thật; `verifyEmail=true`; `emailVerified=true` cho 11 user demo non-federated (5 user AD-federated read-only nên bỏ qua — không thuộc demo localhost); set email master admin = minhtrietlove@gmail.com để test SMTP có người nhận.
+- Verify SMTP thật: `POST /admin/realms/ecommerce-realm/testSMTPConnection` → **HTTP 204** (Gmail auth OK, thư test gửi vào hộp `minhtrietlove@gmail.com`).
+- Tắt SPNEGO: execution `auth-spnego` trong flow `browser` + `shoppay-alternatives` đặt `DISABLED` (trang login hiện form + nút Google ngay, tránh popup native trên máy không join domain).
+- Nguồn `keycloak/ecommerce-realm.json`: `verifyEmail=true` (smtpServer nguồn vốn đã là minhtrietlove@gmail.com/465; Google IdP vốn tham chiếu `${GOOGLE_IDP_CLIENT_ID/SECRET}`).
+- `scripts/use-local-domain.sh localhost` → 5 app `.env`: `NEXTAUTH_URL`/`KEYCLOAK_ISSUER`/`NEXT_PUBLIC_KEYCLOAK_ISSUER` = `http://localhost:<port>` / `http://localhost:8080/realms/ecommerce-realm`. Clients trong realm vốn đã có sẵn redirect URI localhost.
+- Docs: `docs/keycloak.md` mục 8 (runbook localhost Google+SMTP), bảng IdP cập nhật.
+
+**Verify đã chạy (WSL, không cần trình duyệt):**
+- 5 app listen `0.0.0.0:3000-3400` (Next 16, Turbopack, WSL-native).
+- `localhost:8080` discovery `iss=http://localhost:8080/realms/ecommerce-realm`.
+- `shop-ecommerce` providers: keycloak, callbackUrl=`http://localhost:3000/api/auth/callback/keycloak`.
+- NextAuth signin → 302 tới `http://localhost:8080/.../auth` với `redirect_uri=http://localhost:3000/api/auth/callback/keycloak`, PKCE S256.
+- Trang login Keycloak (client nextjs-app) có nút Google + link Quên mật khẩu + link Đăng ký.
+- Theo link broker Google → Keycloak gửi tới `accounts.google.com` với client_id đúng và **`redirect_uri=http://localhost:8080/realms/ecommerce-realm/broker/google/endpoint`** (chính là URI phải đăng ký trong Google Console).
+
+**Việc người dùng PHẢI tự làm (chỉ chủ tài khoản Google):**
+1. Google Cloud Console → Credentials → OAuth client (Web) → Authorized redirect URIs thêm: `http://localhost:8080/realms/ecommerce-realm/broker/google/endpoint`.
+2. OAuth consent screen (nếu Testing): thêm Gmail dùng để đăng nhập vào Test users (hoặc Publish).
+3. Test trên trình duyệt máy thật: `http://localhost:3000` → đăng nhập. Google login; Quên mật khẩu + Đăng ký+verify nên dùng **email thật** (link trong thư trỏ `localhost:8080` nên chỉ bấm được trên trình duyệt của chính máy chạy stack).
+
+**Sự cố trong phiên:** Docker/WSL từng restart giữa chừng (Keycloak Exited 143, Postgres Exited 0) làm dừng toàn bộ container vì compose KHÔNG có `restart:` policy (CONTEXT mục 125); dữ liệu còn nguyên trong named volume, cấu hình realm đã persist. Resume bằng `docker compose up -d keycloak postgres-app postgres-keycloak`. Nếu muốn container tự sống sau restart, cân nhắc thêm `restart: unless-stopped` cho keycloak + 2 postgres (tùy chọn, chưa làm).
+
+**Resume nhanh chế độ localhost (phiên sau):**
+1. `docker compose up -d keycloak postgres-app postgres-keycloak` (đợi `.well-known` 200).
+2. `bash scripts/use-local-domain.sh localhost` (idempotent — nếu `.env` đang là app.ecommerce.local).
+3. `npm run dev` (giữ terminal mở; đây là nơi 5 app sống — KHÔNG phải Docker).
+4. Trình duyệt máy thật: `http://localhost:3000`, Keycloak `http://localhost:8080`.
+
+**Fix demo localhost không vào được trên máy thật (phiên 2026-06-06, tiếp):**
+
+Người dùng báo không vào được web demo trên trình duyệt máy thật để demo Google login + quên mật khẩu + SMTP.
+
+- **Nguyên nhân gốc:** app đang chạy `npm run dev:docker` (5 container app Up). `docker-compose.yml` **hardcode** env app container `NEXTAUTH_URL`/`KEYCLOAK_ISSUER=http://app.ecommerce.local:...`, **đè** `.env` localhost (env Docker thắng file `.env` trong container). Nên đăng nhập redirect tới `http://app.ecommerce.local:8080` — máy thật không resolve được (+ Google chặn TLD `.local`). Đây đúng lý do mục 19 chốt: **demo localhost PHẢI chạy WSL-native `npm run dev`, KHÔNG `dev:docker`.**
+- **Networking thực ra OK:** từ Windows host (qua WSL localhost-forwarding) `curl http://localhost:{3000,3100,3200,3300,3400,8080}` trả 200/307/302 — không phải lỗi mạng. WSL app bind `0.0.0.0`.
+- **Rác từ AD mode (vô hại với localhost, để nguyên):** Windows `netsh portproxy` còn rule listen trên WSL IP **chết** `172.30.226.239` -> connect `172.26.212.202` (listen trên IP cụ thể nên không chặn localhost forwarding). `/etc/hosts` (WSL) + hosts (Windows) còn `app.ecommerce.local` trỏ `192.168.1.148` (VMware VMnet8) + `172.30.226.239`. LAN Wi-Fi thật giờ là `192.168.100.37`. Không cần cho chế độ localhost.
+- **Đã fix:** `npm run dev:docker:stop` (dừng 5 app container, GIỮ keycloak + 2 postgres + nginx) -> `npm run dev` (WSL-native, chạy nền). Ports `3000..3400` đã free rồi mới bind lại.
+- **Verify (không cần trình duyệt):** providers `callbackUrl=http://localhost:3000/...`; POST `/api/auth/signin/keycloak` -> `302 Location: http://localhost:8080/realms/ecommerce-realm/protocol/openid-connect/auth?client_id=nextjs-app&redirect_uri=http://localhost:3000/api/auth/callback/keycloak` + PKCE S256; trang login Keycloak có nút Google (`social-google`) + Quên mật khẩu (`reset-credentials`) + Đăng ký (`registration`). Realm: `verifyEmail=true`, `resetPasswordAllowed=true`, `registrationAllowed=true`, Google IdP `enabled=true` (clientId thật `3741717...`), SMTP `smtp.gmail.com:465` SSL từ `minhtrietlove@gmail.com`.
+- **SMTP test gotcha:** Keycloak **mask** password thành `**********` khi GET realm. Nếu `testSMTPConnection` bằng payload lấy thẳng từ GET -> `500 "Failed to send email"` (auth bằng password mask). Phải tự chèn `SMTP_PASSWORD` thật (16 ký tự app password) từ root `.env` vào payload. Đã làm vậy -> **HTTP 204** (Gmail nhận, gửi mail test). Giá trị thật vẫn lưu nguyên trong realm nên mail thực tế gửi bình thường.
+- **Lưu ý vận hành localhost:** truy cập TRỰC TIẾP `http://localhost:3000..3400`; KHÔNG dùng Nginx `:8000` (giờ 502 vì app container đã dừng). KHÔNG chạy `dev:docker` cho demo Google/SMTP.
+- **Việc người dùng PHẢI tự làm (chưa kiểm chứng tự động được):** (1) Google Cloud Console -> OAuth client -> Authorized redirect URIs thêm `http://localhost:8080/realms/ecommerce-realm/broker/google/endpoint`; (2) consent screen Testing -> thêm Gmail đăng nhập vào Test users (hoặc Publish); (3) test trên trình duyệt máy thật `http://localhost:3000`. Quên mật khẩu + Đăng ký+verify nên dùng email thật (link trong mail trỏ `localhost:8080`, chỉ bấm được trên trình duyệt máy chạy stack).
+- **Lưu ý nhỏ:** Google IdP `trustEmail=true` (xác nhận qua GET `identity-provider/instances/google`), `hostedDomain` rỗng, scope mặc định `openid profile email` (non-sensitive). Nên mọi Gmail dùng được; giới hạn "chỉ mail test" là do **OAuth consent screen ở Testing** — Publish app (External -> In production) để mọi tài khoản Google đăng nhập (sẽ thấy cảnh báo "unverified app", bấm Advanced -> Go to app; non-sensitive scope nên không cần Google verification review). Hoặc thêm từng Gmail vào Test users.
+
+**Bug "trang load lại liên tục" (phiên 2026-06-06, tiếp) — ĐÃ FIX:**
+- Triệu chứng: mở `http://localhost:3000` trên trình duyệt bị reload liên tục (nhưng `curl /` trả 200).
+- Nguyên nhân: cache Turbopack trong `.next/` được tạo bởi **Docker container** (path tuyệt đối `/app` trong container). Khi chuyển sang WSL-native `npm run dev`, Turbopack đọc cache cũ rồi thử tạo `/app/.next/dev/static/chunks` ở gốc filesystem WSL -> `Permission denied (os error 13)` -> panic lặp (`FATAL: An unexpected Turbopack error`). HTML `/` vẫn 200 nhưng client chunks fail -> Next dev runtime force-reload vô hạn. (Lưu ý: file trong `.next` vẫn owner `odixe`; vấn đề là path `/app` baked trong cache, KHÔNG phải quyền file.)
+- Fix: `bash scripts/stop-local-next.sh` -> `rm -rf {shop-ecommerce,shop-sell,shop-pay,shop-food,admin-portal}/.next` -> `npm run dev` lại. Verify: 0 FATAL/panic trong log, client chunk (`/_next/static/chunks/...hmr-client...`) trả 200, 5 app trả 200/307.
+- **Quy tắc chung:** mỗi lần đổi qua lại giữa `dev:docker` (container, path `/app`) và `npm run dev` (WSL-native, path thật) PHẢI xoá `.next` của các app trước khi chạy mode mới, nếu không Turbopack cache xung đột path -> panic + reload loop.
+
+**Đổi về chế độ AD/Kerberos:** `use-local-domain.sh app.ecommerce.local` + `apply-keycloak-local-domain.sh app.ecommerce.local` (bật lại SPNEGO + redirect app host; script này cũng set `verifyEmail=false` cho AD vì user AD dùng email giả) + `npm run dev:docker`.
+
+## 20. Xoá tài khoản Google IdP + xác nhận SSO Google localhost (phiên 2026-06-06, tiếp)
+
+Yêu cầu mới: Google login hình như chưa SSO; xoá toàn bộ tài khoản hiện tại có Google là identity provider; tài khoản mới phải verify email, nhưng tài khoản demo có sẵn không bị chặn; ShopPay vẫn phải hỏi OTP.
+
+Đã kiểm tra live realm:
+- `verifyEmail=true`, `registrationAllowed=true`, `resetPasswordAllowed=true`, `loginWithEmailAllowed=true`.
+- Google IdP `enabled=true`, `trustEmail=true`, clientId thật từ root `.env`.
+- SMTP Gmail `smtp.gmail.com:465` SSL từ `minhtrietlove@gmail.com`; `testSMTPConnection` có một lần timeout TCP, chạy lại với app password thật từ `.env` trả **HTTP 204**.
+- SPNEGO live đang `DISABLED` trong `browser` và `shoppay-alternatives`; source `keycloak/ecommerce-realm.json` đã đổi theo để reset sau này không bật popup Kerberos trong demo localhost.
+- `shoppay-app` vẫn bind flow `browser-shoppay`; `auth-otp-form` trong flow này là `REQUIRED`, nên khi sang ShopPay vẫn phải OTP dù đã có SSO cookie.
+- 5 app `.env` đang ở localhost qua `bash scripts/use-local-domain.sh localhost`.
+
+Đã xoá dữ liệu Google hiện tại:
+- Trước khi xoá có đúng 1 user linked Google: `minhtriet0502@gmail.com` (`fc550341-29a3-4cce-b247-9fc6eafef795`).
+- Đã xoá user này khỏi Keycloak bằng Admin API sau khi xác nhận `/federated-identity` có `identityProvider=google`.
+- Đã xoá cache `user_profile` cùng `sub` trong `ecommerce` và `seller_workspace`; `shoppay`, `shopfood`, `admin_portal` không có row tương ứng.
+- Verify sau xoá: Keycloak `federated_identity` trống; smoke Admin API đếm Google federated users = 0.
+
+Tài khoản verify email:
+- Các user demo gốc (`admin1`, `buyer1/2/3`, `seller1/2`, `staff1/2`, `wallet1`, `kyc1`, `food-seller1`) đều `emailVerified=true`.
+- Một user tự đăng ký thường `minhtriet050206@gmail.com` đang `emailVerified=false`; giữ nguyên vì không phải Google IdP và đúng hành vi account mới cần verify.
+- Google IdP có `trustEmail=true`; user đăng nhập Google mới sẽ được coi email verified từ Google. Luồng verify email bắt buộc áp dụng cho đăng ký username/password qua Keycloak registration.
+
+Verify đã chạy:
+- `npm run dev` đang chạy WSL-native detached (PID lưu ở `/tmp/ecommerce-platform-npm-run-dev.pid`, log `/tmp/ecommerce-platform-npm-run-dev.log`); 5 app ready trên `localhost:3000..3400`; hạ tầng chạy Docker `keycloak`, `postgres-app`, `postgres-keycloak`.
+- NextAuth signin smoke cho đủ 5 app trả authorize URL về issuer `http://localhost:8080/realms/ecommerce-realm`, redirect URI đúng từng app, và **không có `prompt=login`**. Đây là điều kiện để SSO Keycloak cookie hoạt động sau Google login.
+- Trang login Keycloak có nút Google (`social-google`), link Quên mật khẩu (`reset-credentials`) và Đăng ký (`registration`).
+- SMTP test bằng endpoint `POST /admin/realms/ecommerce-realm/testSMTPConnection` với app password thật trả **HTTP 204**.
+
+Resume nhanh đúng trạng thái demo:
+1. Nếu chưa chạy hạ tầng: `docker compose up -d keycloak postgres-app postgres-keycloak`.
+2. Nếu vừa đổi từ Docker app mode: `bash scripts/stop-local-next.sh && rm -rf shop-ecommerce/.next shop-sell/.next shop-pay/.next shop-food/.next admin-portal/.next`.
+3. `bash scripts/use-local-domain.sh localhost`.
+4. `npm run dev` (hoặc nếu muốn chạy nền như phiên này: `setsid bash -lc 'cd /home/odixe/ecommerce-platform && exec npm run dev' </dev/null >/tmp/ecommerce-platform-npm-run-dev.log 2>&1 & echo $! >/tmp/ecommerce-platform-npm-run-dev.pid`).
+5. Demo từ trình duyệt máy thật: `http://localhost:3000`; app khác `:3100/:3300/:3400` sẽ SSO qua `/auth/sso`; `:3200` ShopPay vẫn hỏi OTP.
+
+## 21. Fix Google SSO sang ShopFood/ShopPay + stale session (phiên 2026-06-06, tiếp)
+
+Người dùng báo sau khi đăng nhập Google ở ShopEcommerce rồi sang ShopFood/ShopPay thì browser hiện `[next-auth][error][CLIENT_FETCH_ERROR] Unexpected end of JSON input`; ShopPay cũng không vào được MFA.
+
+Kết quả điều tra:
+- Log app có `[web] [refreshAccessToken] HTTP 400 failed: {"error":"invalid_grant","error_description":"Token is not active"}` ngay trước lỗi client fetch. Đây là session NextAuth cũ/stale sau khi user Google bị xoá hoặc Keycloak session không còn active.
+- Log Keycloak khi Google broker tạo user có lỗi LDAP: Keycloak cố query DC `192.168.1.50:389`, timeout `NoRouteToHost`, rồi mới graceful degradation. DC/AD không thuộc demo localhost nên việc này làm Google login chậm/dễ lỗi.
+- Trong lúc người dùng test, Google IdP tạo lại 2 user: `24521851@gm.uit.edu.vn` và `minhtriet050206@gmail.com`; cả hai đã được xoá lại khỏi Keycloak, cache `ecommerce.user_profile` tương ứng đã xoá. Verify `federated_identity where identity_provider='google'` = 0.
+- Live LDAP provider `ldap` đã đặt `enabled=false` cho chế độ localhost demo. Script AD `scripts/apply-keycloak-local-domain.sh` đã sửa để bật lại LDAP provider khi quay về `app.ecommerce.local`.
+- Live vẫn giữ Google IdP `enabled=true`, `trustEmail=true`; `browser/auth-spnego=DISABLED`; `shoppay-app` vẫn có `auth-otp-form=REQUIRED`.
+
+Code/scripts đã sửa:
+- Thêm `scripts/apply-keycloak-localhost-demo.sh`: set realm flags (`verifyEmail`, registration, reset password), bật Google IdP, tắt SPNEGO, disable LDAP provider live. Dùng sau `scripts/use-local-domain.sh localhost`.
+- Sửa `scripts/apply-keycloak-local-domain.sh`: khi quay lại AD/Kerberos, bật lại LDAP provider (`enabled=true`) và cập nhật keytab nếu Kerberos được bật.
+- Sửa `SingleLogoutWatcher` của đủ 5 app: nếu `session.error === "RefreshAccessTokenError"`, tự `signOut({redirect:false})` rồi chuyển lại `/auth/sso?callbackUrl=<current path>`. Mục tiêu là dọn cookie NextAuth stale thay vì để refresh token chết tạo lỗi/loop.
+- Sửa `SessionProvider` của đủ 5 app: `refetchOnWindowFocus={false}` để giảm lỗi dev overlay do NextAuth tự fetch session khi chuyển tab/app.
+- Docs cập nhật `docs/keycloak.md`: thêm script localhost demo, LDAP disabled, và lưu ý test ShopPay MFA bằng `/wallet` (root `/` là landing public).
+
+Verify đã chạy:
+- `npx tsc --noEmit` sạch cho 5 app sau khi sửa watcher/provider.
+- Restart `npm run dev` WSL-native detached; PID mới trong `/tmp/ecommerce-platform-npm-run-dev.pid`; 5 app ready `3000..3400`.
+- `/api/auth/session` ở `3000`, `3200`, `3300` đều trả `200 application/json {}` khi không có session.
+- Live state: Google federated users = 0; LDAP provider `enabled=false`; Google IdP enabled/trustEmail; `browser/auth-spnego=DISABLED`; ShopPay OTP `REQUIRED`.
+
+Việc người dùng nên làm ngay khi test lại:
+1. Dùng cửa sổ ẩn danh hoặc clear site data cho `localhost` để bỏ cookie cũ (`ecommerce.session-token`, `shoppay.session-token`, Keycloak cookies).
+2. Vào `http://localhost:3000` đăng nhập Google lại. User Google sẽ được tạo mới từ trạng thái sạch, không còn LDAP timeout vào DC.
+3. Sang ShopFood route cần login (vd `http://localhost:3300/cart`) để kiểm tra SSO.
+4. Sang ShopPay bằng `http://localhost:3200/wallet` (không phải `/`) để buộc client `shoppay-app`; flow `browser-shoppay` phải yêu cầu OTP/setup OTP.
+
+## 22. Fix lỗi Chrome `Unsafe attempt to load URL` khi sang ShopPay/ShopFood (phiên 2026-06-07)
+
+Người dùng báo sau khi đăng nhập Google rồi mở `http://localhost:3200/wallet` hoặc `http://localhost:3300/cart`, Chrome hiện lỗi:
+`Unsafe attempt to load URL http://localhost:3200/wallet from frame with URL chrome-error://chromewebdata/. Domains, protocols and ports must match.`
+
+Kết quả kiểm tra:
+- Runtime đúng chế độ demo localhost: chỉ `keycloak`, `postgres-app`, `postgres-keycloak` chạy Docker; 5 app chạy WSL-native bằng `npm run dev`, bind `0.0.0.0` trên `localhost:3000..3400`.
+- `.env` của 5 app đều là localhost: `NEXTAUTH_URL=http://localhost:<port>`, `KEYCLOAK_ISSUER=http://localhost:8080/realms/ecommerce-realm`.
+- Log dev chỉ ra race ở ShopFood: session NextAuth cũ bị refresh fail `invalid_grant / Token is not active`; `SingleLogoutWatcher` vừa gọi `signOut()` vừa `/auth/sso` tự gọi `signIn()`, làm callback URL bị lồng thành `/auth/sso?callbackUrl=/auth/sso?callbackUrl=/cart`. Trạng thái này có thể đẩy browser vào trang lỗi Chrome thay vì quay về route đích.
+- Live Keycloak sau khi áp `bash scripts/apply-keycloak-localhost-demo.sh`: Google IdP enabled/trustEmail, LDAP provider `enabled=false`, `browser/auth-spnego=DISABLED`, `browser-shoppay/auth-otp-form=REQUIRED`. SMTP test Gmail trả HTTP 204.
+
+Đã sửa code:
+- `AutoSsoSignIn` của đủ 5 app (`shop-ecommerce`, `shop-sell`, `shop-pay`, `shop-food`, `admin-portal`) nay gọi `signOut({ redirect:false })` để xoá session NextAuth local/stale của app trước, rồi mới `signIn("keycloak", { callbackUrl })`. Đây chỉ xoá cookie app hiện tại, không logout Keycloak, nên SSO Keycloak vẫn còn.
+- `SingleLogoutWatcher` của đủ 5 app bỏ qua nhánh `RefreshAccessTokenError` khi đang ở `/auth/sso`, tránh race sign-out/sign-in ngay trong trang auto SSO.
+- `app/auth/sso/page.tsx` của đủ 5 app bóc callback bị lồng tối đa 3 lớp; ví dụ `/auth/sso?callbackUrl=%2Fauth%2Fsso%3FcallbackUrl%3D%2Fcart` trở lại `/cart`.
+
+Đã xoá dữ liệu Google hiện tại:
+- Trước khi xoá có đúng 1 user linked Google: `minhtriet050206@gmail.com` (`2548fb78-72cf-4086-9ad3-150373443fad`).
+- Đã xoá user này khỏi Keycloak bằng Admin API sau khi xác nhận `/federated-identity` có `identityProvider=google`.
+- Đã xoá cache `user_profile` theo `sub` trong các DB app có row tương ứng (`ecommerce`, `shopfood`); các DB còn lại trả `DELETE 0`.
+- Verify sau xoá bằng Admin API: `googleUsers: []`.
+
+Verify đã chạy:
+- `npx tsc --noEmit` sạch cho đủ 5 app.
+- Protected route chưa session:
+  - `3000/account` -> `/auth/sso?callbackUrl=%2Faccount`
+  - `3100/dashboard` -> `/auth/sso?callbackUrl=%2Fdashboard`
+  - `3200/wallet` -> `/auth/sso?callbackUrl=%2Fwallet`
+  - `3300/cart` -> `/auth/sso?callbackUrl=%2Fcart`
+  - `3400/users` -> `/auth/sso?callbackUrl=%2Fusers`
+- NextAuth signin smoke cho đủ 5 app sinh authorize URL đúng `http://localhost:8080` và redirect URI đúng từng app (`http://localhost:<port>/api/auth/callback/keycloak`), không lệch sang `app.ecommerce.local`.
+- Keycloak login page vẫn có nút Google (`social-google`), link quên mật khẩu (`reset-credentials`), link đăng ký (`registration`).
+- Sau request mới tới `/auth/sso` + `/api/auth/session` của ShopPay/ShopFood, log không sinh thêm `RefreshAccessTokenError`, `CLIENT_FETCH_ERROR`, `Unexpected end of JSON input`, hay Turbopack panic.
+
+Resume/test lại:
+1. Giữ chế độ localhost: `docker compose up -d keycloak postgres-app postgres-keycloak`, `bash scripts/use-local-domain.sh localhost`, `bash scripts/apply-keycloak-localhost-demo.sh`, rồi `npm run dev`.
+2. Nếu vừa đổi từ Docker app mode, chạy `bash scripts/stop-local-next.sh` và xoá `.next` của 5 app trước khi `npm run dev`.
+3. Test nên dùng tab ẩn danh hoặc clear site data `localhost` nếu Chrome vẫn giữ trang `chrome-error://chromewebdata/` cũ. Code đã tự dọn session NextAuth stale, nhưng browser error page cũ có thể cần mở tab mới.
+4. Demo: login Google ở `http://localhost:3000`, mở `http://localhost:3300/cart` để thấy SSO vào ShopFood, mở `http://localhost:3200/wallet` để thấy ShopPay vẫn qua OTP/setup OTP do `browser-shoppay` yêu cầu.
+
+**Ngay sau mục 22, người dùng báo không vào được web:** đã restart sạch đúng chế độ localhost, KHÔNG wipe DB:
+`bash scripts/stop-local-next.sh`, xoá `.next` của 5 app, `docker compose up -d keycloak postgres-app postgres-keycloak`, `bash scripts/use-local-domain.sh localhost`, `bash scripts/apply-keycloak-localhost-demo.sh`, rồi start nền `npm run dev` vào `/tmp/ecommerce-platform-npm-run-dev.log`. Verify sau restart: Windows `curl.exe --head http://localhost:{3000,3200,3300,3400}/` trả `200`, `3100` trả `307` (đúng vì ShopSell bảo vệ root), `8080` trả `302`; `/wallet`, `/cart`, `/users` trả `307` tới `/auth/sso?callbackUrl=...`. Log mới không có `FATAL`/panic.
+
+## 23. Email template Keycloak cho đăng ký xác thực email + quên mật khẩu (phiên 2026-06-07)
+
+Yêu cầu: khi user đăng ký mới bằng email thì Keycloak tự gửi email xác thực; đồng thời tự tạo template phù hợp cho 2 loại email: xác thực email và đặt lại mật khẩu.
+
+Trạng thái/config:
+- Realm nguồn `keycloak/ecommerce-realm.json` đã có `verifyEmail=true`, `registrationAllowed=true`, `resetPasswordAllowed=true`, `loginWithEmailAllowed=true`; đã thêm `emailTheme: "ecommerce"`.
+- Live realm cũng đã set `emailTheme=ecommerce` qua `scripts/apply-keycloak-localhost-demo.sh`.
+- `scripts/apply-keycloak-localhost-demo.sh` nay giữ `realmConfig.emailTheme = "ecommerce"` để mỗi lần áp lại localhost demo không mất theme.
+- `docker-compose.yml` đã mount theme: `./keycloak/themes/ecommerce:/opt/keycloak/themes/ecommerce:ro`. Đã recreate riêng Keycloak bằng `docker compose up -d --force-recreate keycloak` (không wipe DB).
+
+Theme files đã thêm:
+- `keycloak/themes/ecommerce/email/theme.properties` (`parent=base`).
+- Verify email:
+  - `keycloak/themes/ecommerce/email/html/email-verification.ftl`
+  - `keycloak/themes/ecommerce/email/text/email-verification.ftl`
+- Reset password:
+  - `keycloak/themes/ecommerce/email/html/password-reset.ftl`
+  - `keycloak/themes/ecommerce/email/text/password-reset.ftl`
+- Subject:
+  - `keycloak/themes/ecommerce/email/messages/messages_en.properties`
+  - `keycloak/themes/ecommerce/email/messages/messages_vi.properties`
+
+Nội dung template:
+- Tone tiếng Việt, thương hiệu `Ecommerce Platform`.
+- Email xác thực giải thích user vừa đăng ký, có CTA "Xác thực email", link fallback, thời hạn link, và hướng dẫn bỏ qua nếu không tạo tài khoản.
+- Email reset password có CTA "Đặt lại mật khẩu", link fallback, thời hạn link, và nhấn mạnh nếu không yêu cầu thì mật khẩu không đổi.
+- Cả HTML và text fallback đều dùng biến Keycloak `${link}`, `${realmName}`, `${user.firstName!user.username}`, `${linkExpirationFormatter(linkExpiration)}`.
+
+Verify đã chạy:
+- `docker compose config --quiet` sạch.
+- `node -e 'require("./keycloak/ecommerce-realm.json")'` OK.
+- Keycloak container thấy đủ theme files ở `/opt/keycloak/themes/ecommerce/...`.
+- Live realm check: `verifyEmail=true`, `registrationAllowed=true`, `resetPasswordAllowed=true`, `emailTheme=ecommerce`, SMTP host `smtp.gmail.com`.
+- SMTP test với app password thật trả HTTP 204.
+- Tạo user test tạm và gửi verify email thật tới Gmail plus-alias (`minhtrietlove+kc-template-...@gmail.com`) bằng Admin API `send-verify-email`: thành công, sau đó user test đã xoá.
+- Tạo user test tạm khác và chạy luồng "Forgot password" thật qua login form để gửi email reset password tới `minhtrietlove+kc-reset-...@gmail.com`: thành công (`resetFlowStatus=200`), sau đó user test đã xoá.
+- Verify cleanup: không còn user `email-template-test-*` hoặc `password-template-test-*`.
+- Log Keycloak không có lỗi FreeMarker/template/SMTP. Có một `RESET_PASSWORD_ERROR cookie_not_found` từ lần thử parse reset đầu tiên bị hỏng; không liên quan template, lần chạy reset thứ hai đã gửi thành công.
+
+Lưu ý vận hành:
+- Đăng ký username/password qua Keycloak registration sẽ bị chặn cho tới khi email được xác thực vì `verifyEmail=true`.
+- Google login vẫn không cần verify email riêng vì Google IdP đang `trustEmail=true`.
+- Nếu sửa template, recreate riêng Keycloak rồi áp script:
+  `docker compose up -d --force-recreate keycloak && bash scripts/apply-keycloak-localhost-demo.sh`.
+
+## 24. Fix verify email chưa tự gửi khi đăng ký + xoá user `odixe*` (phiên 2026-06-07)
+
+Người dùng báo: sau khi đăng ký user mới, email xác thực vẫn chưa tự gửi; muốn đăng ký xong phải bấm link xác thực email thì mới đăng nhập tiếp được. Đồng thời yêu cầu xoá sạch user `odixe`, `odixehihi`, `odixehi`.
+
+Nguyên nhân thật:
+- Live realm đang có `verifyEmail=true`, `registrationAllowed=true`, `resetPasswordAllowed=true`, `emailTheme=ecommerce`.
+- Nhưng Required Action live `VERIFY_EMAIL` lại đang `enabled=false`. Source `keycloak/ecommerce-realm.json` đã là `enabled=true`, nhưng realm live bị lệch từ trước, nên cần sửa live và script apply.
+
+Đã sửa:
+- `scripts/apply-keycloak-localhost-demo.sh` thêm hàm `setRequiredAction()`.
+- Script nay ép `VERIFY_EMAIL` thành `enabled=true`, `defaultAction=false` mỗi lần apply localhost demo.
+- Đã chạy lại `bash scripts/apply-keycloak-localhost-demo.sh`; live realm hiện:
+  - `verifyEmail=true`
+  - `emailTheme=ecommerce`
+  - `VERIFY_EMAIL.enabled=true`
+  - `VERIFY_EMAIL.defaultAction=false`
+
+Verify đăng ký thật:
+- Tạo user test qua **form registration Keycloak thật** với email Gmail plus-alias.
+- Sau submit form:
+  - HTTP status `200`
+  - page là trang verify email
+  - user `emailVerified=false`
+  - user có `requiredActions=["VERIFY_EMAIL"]`
+  - không redirect về app khi chưa verify.
+- Test tiếp: mở phiên mới login bằng username/password của user chưa verify. Kết quả `blockedAtVerify=true`, final status `200`, vẫn ở required action page, không có code redirect về app. Đây khớp yêu cầu "bấm xác thực xong mới có thể đăng nhập tiếp".
+- Log Keycloak 5 phút gần nhất không có lỗi SMTP/template/registration.
+- User test `registration-verify-test-*` và `login-block-test-*` đã xoá sau verify.
+
+Xoá user/cache `odixe*`:
+- Keycloak Admin API và DB `user_entity` không còn user `odixe`, `odixehihi`, `odixehi`. Log trước đó cho thấy các lần `odixe ` có dấu cách cuối bị `REGISTER_ERROR invalid_registration`, nên không tạo user Keycloak.
+- `ecommerce.user_profile` có 3 cache mồ côi:
+  - `odixe` / `57863899-7e9a-4a88-9633-d0bd7cf9736c`
+  - `odixehihi` / `aded45f9-6260-490c-a478-ccac7d15c175`
+  - `odixehi` / `db88f820-9419-4d74-9c0a-62bea508e48c`
+- Đã xoá đúng 3 row này: `DELETE 3`.
+- Kiểm tra các bảng nghiệp vụ theo 3 `sub` trên:
+  - `ecommerce`: `cart_items`, `orders`, `seller_upgrade_requests`, `stores`, `products` đều 0.
+  - `seller_workspace`, `shoppay`, `shopfood`, `admin_portal` đều 0 liên quan.
+- Verify sau xoá: Keycloak matches `[]`, `ecommerce.user_profile` matches `0`.

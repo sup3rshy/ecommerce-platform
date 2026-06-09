@@ -238,7 +238,7 @@ async function deleteProduct(formData: FormData) {
 
 export default async function ProductsPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/products");
   const roles = session.user.roles ?? [];
   if (!canManage(roles)) redirect("/denied");
 

@@ -64,7 +64,7 @@ Từ root: `npm run dev` (đã gồm admin-portal :3400). Hoặc riêng:
 cd admin-portal && npm install && npm run db:push && npm run dev
 ```
 
-Đăng nhập SSO bằng tài khoản có role admin nền tảng (vd `admin1`). Endpoint kiểm thử: `:3400/ecommerce`, `/food`, `/users`, `/kyc`, `/audit`.
+Mở các route quản trị (`:3400/ecommerce`, `/food`, `/users`, `/kyc`, `/audit`) bằng tài khoản có role admin nền tảng (vd `admin1`). Nếu chưa có session app, guard sẽ tự chuyển qua `/auth/sso` rồi sang Keycloak; không dùng trang sign-in mặc định của NextAuth.
 
 ## Còn lại
 

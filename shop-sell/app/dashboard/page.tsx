@@ -11,7 +11,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/dashboard");
 
   const roles = session.user.roles ?? [];
   const groups = session.user.groups ?? [];

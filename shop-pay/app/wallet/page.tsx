@@ -8,7 +8,7 @@ import { getOrCreateWallet, formatVND } from "@/lib/wallet";
 
 export default async function WalletPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/wallet");
 
   const wallet = await getOrCreateWallet(session.user.id);
   const txs = await db

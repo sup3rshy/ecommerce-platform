@@ -16,7 +16,7 @@ const STATUS_BADGE: Record<string, [string, string]> = {
 
 export default async function KycAdminPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin?callbackUrl=/kyc/admin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/kyc/admin");
 
   const roles = session.user.roles ?? [];
   const canReview = roles.some((r) => REVIEWER_ROLES.includes(r));

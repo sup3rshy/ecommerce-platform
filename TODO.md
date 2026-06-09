@@ -100,6 +100,7 @@ Bám theo các phase trong [PLAN.md](PLAN.md). `[x]` đã xong, `[ ]` chưa làm
 - [x] Tái cấu trúc role thành composite + gắn staff với shop qua Keycloak group (CONTEXT.md mục 13): gộp 3 `staff-*` -> `staff` (⊇buyer), `seller`⊇staff, `food-seller`⊇buyer, `wallet-user`⊇buyer, `kyc-verified`⊇wallet-user; shop = group `store-demo-1/2`; KYC review chuyển sang `pay_admin`. Migrate live realm bằng kcadm.
 - [x] ShopSell đọc `storeId` từ Keycloak group (`lib/store.ts`), bỏ hardcode `DEMO_STORE_ID=1` (CONTEXT.md mục 14).
 - [x] admin-portal: hiển thị TOÀN BỘ quyền (effective composite) + gán shop (Keycloak group) enforce "đúng 1 shop".
+- [x] Bỏ trang sign-in trung gian của NextAuth: 5 app dùng `/auth/sso` để tự gọi `signIn("keycloak")`, route guard không còn trỏ `/api/auth/signin`.
 - [x] food-seller self-service: buyer xin -> admin duyệt -> cấp role food-seller (cột `kind` trên seller_upgrade_requests).
 - [x] admin-portal: thêm quản trị tập trung `/ecommerce` và `/food`; `ecommerce_admin` thay thế `sell_admin`; thêm `buyer2`/`buyer3`.
 - [ ] ShopFood: seller workspace cho `food-seller` (CRUD menu nhà hàng của mình) — đã có role + luồng xin quyền + tài khoản mẫu, chưa có UI quản lý menu.

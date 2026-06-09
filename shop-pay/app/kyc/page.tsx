@@ -50,7 +50,7 @@ const STATUS_LABEL: Record<string, [string, string]> = {
 
 export default async function KycPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/kyc");
   const hasKycRole = session.user.roles?.includes("kyc-verified") ?? false;
 
   const existing = await db

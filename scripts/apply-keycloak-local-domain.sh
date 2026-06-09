@@ -150,11 +150,12 @@ await setExecutionRequirement("shoppay-alternatives", "auth-spnego", "ALTERNATIV
 const providers = await request(`/admin/realms/${realm}/components?type=org.keycloak.storage.UserStorageProvider`);
 for (const provider of providers.filter((item) => item.providerId === "ldap")) {
   provider.config = provider.config || {};
+  provider.config.enabled = ["true"];
   if (provider.config.allowKerberosAuthentication?.[0] === "true") {
     provider.config.serverPrincipal = [principal];
     provider.config.keyTab = [keytabPath];
-    await request(`/admin/realms/${realm}/components/${provider.id}`, { method: "PUT", body: JSON.stringify(provider) });
-    console.log(`updated LDAP Kerberos keytab path for ${provider.name}`);
   }
+  await request(`/admin/realms/${realm}/components/${provider.id}`, { method: "PUT", body: JSON.stringify(provider) });
+  console.log(`enabled LDAP provider ${provider.name}`);
 }
 NODE

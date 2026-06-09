@@ -22,7 +22,7 @@ const STATUS_LABEL: Record<string, string> = {
 async function cancelOrder(formData: FormData) {
   "use server";
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/orders");
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) return;
 
@@ -51,7 +51,7 @@ async function cancelOrder(formData: FormData) {
 
 export default async function MyOrdersPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/orders");
 
   const myOrders = await db
     .select()

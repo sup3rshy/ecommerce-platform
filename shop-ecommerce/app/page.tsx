@@ -104,7 +104,7 @@ export default async function Home({ searchParams }: PageProps) {
             )}
             {!isAuthenticated && (
               <Link
-                href="/api/auth/signin/keycloak"
+                href="/auth/sso?callbackUrl=/"
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 Đăng nhập với Keycloak
@@ -208,7 +208,7 @@ export default async function Home({ searchParams }: PageProps) {
                         </button>
                       ) : (
                         <Link
-                          href="/api/auth/signin/keycloak"
+                          href="/auth/sso?callbackUrl=/"
                           className="inline-block rounded bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 hover:bg-blue-200"
                         >
                           Đăng nhập để mua

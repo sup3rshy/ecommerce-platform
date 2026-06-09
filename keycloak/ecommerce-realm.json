@@ -30,10 +30,11 @@
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": false,
-  "verifyEmail": false,
+  "verifyEmail": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
+  "emailTheme": "ecommerce",
   "editUsernameAllowed": false,
   "bruteForceProtected": false,
   "permanentLockout": false,
@@ -2240,11 +2241,11 @@
     "port": "465",
     "host": "smtp.gmail.com",
     "replyTo": "",
-    "from": "m1zuguchi2201@gmail.com",
+    "from": "minhtrietlove@gmail.com",
     "fromDisplayName": "Ecommerce Platform Support",
     "authType": "basic",
     "connectionTimeout": "10000",
-    "user": "m1zuguchi2201@gmail.com"
+    "user": "minhtrietlove@gmail.com"
   },
   "eventsEnabled": false,
   "eventsListeners": [
@@ -2512,7 +2513,7 @@
         {
           "authenticator": "auth-spnego",
           "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
+          "requirement": "DISABLED",
           "priority": 20,
           "autheticatorFlow": false,
           "userSetupAllowed": false
@@ -2882,7 +2883,7 @@
         {
           "authenticator": "auth-spnego",
           "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
+          "requirement": "DISABLED",
           "priority": 20,
           "autheticatorFlow": false,
           "userSetupAllowed": false

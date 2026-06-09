@@ -11,7 +11,7 @@ export async function proxy(req: NextRequest) {
   });
 
   if (!token || token.error === "RefreshAccessTokenError") {
-    const signInUrl = new URL("/api/auth/signin", req.url);
+    const signInUrl = new URL("/auth/sso", req.url);
     signInUrl.searchParams.set(
       "callbackUrl",
       req.nextUrl.pathname + req.nextUrl.search
@@ -28,9 +28,10 @@ export async function proxy(req: NextRequest) {
 
 // Chặn toàn bộ :3100 trừ:
 //   - /denied (page hiện thông báo)
+//   - /auth/sso (trang tự khởi tạo SSO, không cần click provider)
 //   - /api/auth/* (NextAuth flow cần unauthenticated access)
 //   - /_next/* (static assets, font, image)
 //   - /favicon.ico
 export const config = {
-  matcher: ["/((?!denied|api/auth|_next|favicon.ico).*)"],
+  matcher: ["/((?!denied|auth/sso|api/auth|_next|favicon.ico).*)"],
 };

@@ -25,7 +25,7 @@ npm run dev    # http://localhost:3200
 
 ## Demo MFA flow
 
-1. Mở `http://localhost:3200` → Đăng nhập SSO.
+1. Mở `http://localhost:3200/wallet`; nếu chưa có session app, route tự chuyển qua `/auth/sso` rồi sang Keycloak.
 2. Login bằng `wallet1` / `Wallet1@2024`.
 3. Keycloak detect required action `CONFIGURE_TOTP` → bắt buộc setup TOTP:
    - Cài app Authenticator (Google Authenticator, Microsoft Authenticator, 1Password, ...) trên điện thoại.

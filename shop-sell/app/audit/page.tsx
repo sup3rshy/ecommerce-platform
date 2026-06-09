@@ -9,7 +9,7 @@ const PAGE_SIZE = 50;
 
 export default async function AuditPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) redirect("/api/auth/signin");
+  if (!session?.user?.id) redirect("/auth/sso?callbackUrl=/audit");
 
   const logs = await db
     .select()
